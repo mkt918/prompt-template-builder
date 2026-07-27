@@ -298,11 +298,12 @@
       <div class="field">
         <div class="lab">プロンプト構造 <span class="hint">AIが指示と素材を読み分ける枠組み</span></div>
         <div class="seg" data-key="struct"></div>
+        <div class="hint" id="structHint" style="margin-top:7px"></div>
       </div>
 
       <div class="r80-box" id="longBox" onclick="toggleLong()">
         <div class="sw"></div>
-        <div class="tx"><b>長文入力モード</b><span>長い資料を貼るとき用。素材を先頭・依頼を末尾に置く（公式推奨。複数資料では品質が最大30%向上）</span></div>
+        <div class="tx"><b>長文入力モード</b><span>長い資料を貼るとき用。素材を先頭・依頼を末尾に置き、先に関連箇所を引用させる（公式テストで最大30%向上：複雑な複数資料の場合）</span></div>
       </div>
 
       <div class="r80-box" id="r80Box" onclick="toggleR80()">
@@ -317,12 +318,16 @@
           <div class="ticks" id="toneTicks"></div>
         </div>
       </div>
-      <div class="field">
+      <div class="field" id="lengthField">
         <div class="lab">分量</div>
         <div class="sl">
           <input type="range" id="lengthSlider" min="0" max="4" step="1" value="2">
           <div class="ticks" id="lengthTicks"></div>
         </div>
+      </div>
+      <div class="field" id="lengthNone" style="display:none">
+        <div class="lab">分量 <span class="hint">この用途では指定しません</span></div>
+        <div class="hint">出力量が原文や構造要件に従属するため、独立した分量指定は矛盾を生みます。分量の指示はプロンプトに入りません。</div>
       </div>
       <div class="field"><div class="lab">出力形式</div><div class="seg" data-key="format"></div></div>
 
@@ -342,8 +347,8 @@
             <input type="text" id="audience" placeholder="例：初心者 / 経営層 / 小学生">
           </div>
           <div class="field">
-            <div class="lab">お手本の例 <span class="hint">この形に寄せてほしい出力例</span></div>
-            <textarea id="example" style="min-height:56px" placeholder="例）Q: … A: … のような形式で"></textarea>
+            <div class="lab">お手本の例 <span class="hint">3〜5個あると精度が上がる。--- の行で区切って複数指定できます</span></div>
+            <textarea id="example" style="min-height:56px" placeholder="例1&#10;---&#10;例2&#10;---&#10;例3"></textarea>
           </div>
           <div class="field">
             <div class="lab">思考の手法</div>
@@ -403,15 +408,8 @@
 const OPTS = {
   struct:  ["Markdown見出し","XMLタグ"],
   format:  ["おまかせ","箇条書き","文章","見出し付き","表","手順ステップ","JSON"],
-  method:  ["順を追って考える","複数の案を出す","根拠を示す","反対意見も検討する","関連箇所を引用してから答える","徹底的に作り込む","スコープを広げない"],
+  method:  ["順を追って考える","複数の案を出す","根拠を示す","反対意見も検討する","関連箇所を引用してから答える","新規制作を作り込む","スコープを広げない"],
   stability:["結論から述べる","不明点は先に質問","フォーマット厳守","推測で断定しない","最後に自己チェック"]
-};
-
-/* ===== セクション → XMLタグ名 ===== */
-const XML_TAG = {
-  "役割":"role", "背景・前提":"context", "依頼":"instructions", "対象・内容":"input",
-  "対象読者":"audience", "出力条件":"output_format", "お手本の例":"examples",
-  "進め方":"process", "禁止事項":"constraints"
 };
 
 /* ===== トーン／分量：5段階 ===== */
@@ -449,8 +447,13 @@ const DEPTH_LEVELS = [
   {label:"掘り下げ", text:"見落としやすい点や周辺の論点まで踏み込んで検討する"},
   {label:"徹底的", text:"考えられる限りの観点・パターン・ケースを洗い出し、抜け漏れがない状態にする"}
 ];
-const LENGTH_LEVEL_SETS = {prose:LENGTH_LEVELS, code:CODE_LENGTH_LEVELS, depth:DEPTH_LEVELS};
-function lengthLevelsOf(p){ return LENGTH_LEVEL_SETS[p.lengthKind] || LENGTH_LEVELS; }
+/* lengthKind:"none" は分量の指示自体を出さない用途（翻訳・作業まとめなど、
+   出力量が原文や構造要件に従属し、独立した分量指定が矛盾を生むもの） */
+const LENGTH_LEVEL_SETS = {prose:LENGTH_LEVELS, code:CODE_LENGTH_LEVELS, depth:DEPTH_LEVELS, none:null};
+function lengthLevelsOf(p){
+  if(p.lengthKind==="none") return null;
+  return LENGTH_LEVEL_SETS[p.lengthKind] || LENGTH_LEVELS;
+}
 
 /* ===== AIっぽい文章の特徴 → 除去指示 =====
    ※ 公式のプロンプト指針に沿い、rule は「してはいけないこと」ではなく
@@ -484,8 +487,8 @@ const PRESETS = {
     model:{tier:"low", name:"Haiku / Sonnet", effort:"小", why:"仕様が明確な定型作業。速いモデルで十分な品質が出る"},
     label:"要約したい文章を貼り付けてください",
     task:"次の文章を要約してください。目的は、原文を読まなくても意思決定や理解に必要な情報が得られる状態にすることです。",
-    quality:["原文にない情報や解釈を付け足さない","固有名詞・数値・日付は省略せず正確に保持する","重要度の高い順に並べる"],
-    tone:0, length:0, format:"箇条書き", method:[], stability:["結論から述べる"] },
+    quality:["原文にない情報や解釈を付け足さない","要点に含まれる固有名詞・数値・日付は、省略せず正確に保持する","重要度の高い順に並べる"],
+    tone:0, length:2, format:"箇条書き", method:[], stability:["結論から述べる"] },
 
   blog:{ ico:"✍️", nm:"文章作成", grp:"basic", role:"読み手を引き込むプロのライター",
     model:{tier:"high", name:"Fable / Opus", effort:"大", why:"文章の質がそのまま成果物の価値になる。強いモデルの差が最も出る用途"},
@@ -503,72 +506,72 @@ const PRESETS = {
 
   translate:{ ico:"🌐", nm:"翻訳", grp:"basic", role:"両言語の文化に精通したプロの翻訳者",
     model:{tier:"mid", name:"Sonnet", effort:"中", why:"通常はSonnetで十分。文学的なニュアンス重視ならFableに切り替え"},
-    label:"翻訳したい文章を貼り付けてください",
-    task:"次の文章を翻訳してください。逐語訳ではなく、訳文だけを読んだ人が原文の読者と同じ理解と印象を得られる翻訳にしてください。",
-    quality:["意味の欠落・付け足しがない","直訳調を避け、訳文の言語として自然な表現にする","語調・ニュアンス（丁寧さ、ユーモア等）を保つ","訳しにくい語は訳注を添える"],
-    tone:2, length:2, format:"文章", method:[], stability:["推測で断定しない"] },
+    label:"翻訳したい文章と、訳出先の言語を書いてください",
+    task:"次の文章を翻訳してください。訳出先の言語は対象・内容の指定に従ってください。逐語訳ではなく、訳文だけを読んだ人が原文の読者と同じ理解と印象を得られる翻訳にしてください。",
+    quality:["意味の欠落・付け足しがない","訳文の長さは原文の情報量に対応させる（字数を切り詰めて情報を落とさない）","直訳調を避け、訳文の言語として自然な表現にする","語調・ニュアンス（丁寧さ、ユーモア等）を保つ","訳しにくい語は訳注を添える"],
+    tone:2, length:2, format:"文章", lengthKind:"none", method:[], stability:["推測で断定しない"] },
 
   code:{ ico:"💻", nm:"コード", grp:"basic", role:"経験豊富なソフトウェアエンジニア",
     model:{tier:"mid", name:"Sonnet / Opus", effort:"中", why:"通常はSonnet。複雑な設計判断が絡むならOpusに上げる"},
     label:"やりたいこと・エラー・対象コードを書いてください",
     task:"次の内容に対応するコードを書いてください。そのまま動かせる完全なコードと、判断が必要だった点の簡潔な説明を出力してください。",
     quality:["省略なしで、そのまま実行・貼り付けできる状態にする","開いていないコードについて推測で答えない。参照されたファイルがある場合は必ず読んでから答える","要求されていない機能追加・リファクタ・抽象化をしない。起こり得ない事態への防御的なコードやフォールバックも足さず、検証は外部との境界（ユーザー入力・外部API）だけに置く","テストを通すための特殊対応やハードコードをせず、有効な入力すべてに対して正しく動く一般的な実装にする","エッジケース（空入力・エラー時）を考慮し、前提にした環境やバージョンを明記する"],
-    tone:1, length:4, format:"手順ステップ", lengthKind:"code", method:["順を追って考える"], stability:["不明点は先に質問","推測で断定しない"] },
+    tone:1, length:2, format:"手順ステップ", lengthKind:"code", method:["順を追って考える"], stability:["不明点は先に質問","推測で断定しない"] },
 
   frontend:{ ico:"🎨", nm:"UI・デザイン", grp:"basic", role:"独自の美意識を持つフロントエンドデザイナー兼エンジニア",
     model:{tier:"high", name:"Fable / Opus", effort:"中", why:"独自性の高いデザインは高性能モデルで差が出る。ありふれた見た目に寄りやすいので指示も効く"},
     label:"作りたい画面・ブランド・雰囲気を書いてください",
     task:"次の要件でフロントエンドを実装してください。目的は、ありふれた既製品のような見た目ではなく、この文脈のために設計されたと感じられる画面にすることです。",
-    quality:["いわゆる「AIが作った感じ」の美意識を避ける：使い古されたフォント（Inter・Roboto・Arial・システムフォント）、白や黒地に紫グラデーションの配色、予測どおりのレイアウトを使わない","配色は一つの方向性に決め切る（CSS変数で統一）。主となる色と鋭いアクセント色で構成し、無難に散らした配色にしない","フォントは文脈に合う個性のあるものを選び、書体で世界観を作る","背景は単色で済ませず、グラデーション・幾何パターン・文脈に合う効果で奥行きを作る","動きは要所に集中させる（読み込み時の段階的な表示など）。細かな動きを全体に散らさない","実装前に、方向性の異なる案を3〜4つ（背景色・アクセント色・書体・一行の狙い）提示し、どれを採用するか確認する"],
-    tone:2, length:4, format:"おまかせ", lengthKind:"code", method:[], stability:[] },
+    quality:["いわゆる「AIが作った感じ」の美意識を避ける：使い古されたフォント（Inter・Roboto・Arial・システムフォント）、白や黒地に紫グラデーションの配色、予測どおりのレイアウトを使わない","配色は一つの方向性に決め切る（CSS変数で統一）。主となる色と鋭いアクセント色で構成し、無難に散らした配色にしない","フォントは文脈に合う個性のあるものを選び、書体で世界観を作る","背景は単色で済ませず、グラデーション・幾何パターン・文脈に合う効果で奥行きを作る","動きは要所に集中させる（読み込み時の段階的な表示など）。細かな動きを全体に散らさない","最初に、方向性の異なる案を3〜4つ（背景色・アクセント色・書体・一行の狙い）提示して、どれを採用するか確認する。実装に入るのは採用が決まってからで、それまでコードは書かない"],
+    tone:2, length:2, format:"おまかせ", lengthKind:"code", method:[], stability:[] },
 
   idea:{ ico:"💡", nm:"アイデア出し", grp:"basic", role:"発想力に富んだブレストパートナー",
     model:{tier:"high", name:"Fable / Opus", effort:"中", why:"発想の幅と意外性は高性能モデルが明確に強い"},
     label:"考えたいテーマ・お題を書いてください",
     task:"次のテーマについてアイデアを出してください。目的は選択肢を広げることなので、質より量と多様性を優先してください。",
     quality:["切り口の異なる案を最低8個出す","無難な案だけでなく、意外性のある案を必ず混ぜる","各案に一言で「狙い」を添える","似た案を水増ししない"],
-    tone:1, length:4, format:"箇条書き", lengthKind:"depth", method:["複数の案を出す"], stability:[] },
+    tone:1, length:3, format:"箇条書き", lengthKind:"depth", method:["複数の案を出す"], stability:[] },
 
   proof:{ ico:"🔍", nm:"添削・校正", grp:"basic", role:"厳密で丁寧な校正者",
     model:{tier:"mid", name:"Sonnet", effort:"中", why:"ルールベースの確認が中心。標準モデルで安定する"},
     label:"添削してほしい文章を貼り付けてください",
     task:"次の文章を校正・添削してください。誤りの指摘と修正版の両方を出力してください。",
     quality:["誤字脱字→文法→表現→論理の順に段階的にチェックする","指摘には必ず理由を添える","元の文体や意図は変えず、必要な修正だけを行う","問題のない箇所を無理に直さない"],
-    tone:2, length:4, format:"見出し付き", lengthKind:"depth", method:["根拠を示す"], stability:["フォーマット厳守"] },
+    tone:2, length:2, format:"見出し付き", lengthKind:"depth", method:["根拠を示す"], stability:["フォーマット厳守"] },
 
   manual:{ ico:"📘", nm:"マニュアル作成", grp:"basic", role:"分かりやすい手順を設計するテクニカルライター",
     model:{tier:"low", name:"Haiku / Sonnet", effort:"小", why:"整理と構成が中心の定型作業。速いモデルで十分な品質が出る"},
     label:"マニュアル化したい作業内容・操作手順を書いてください",
     task:"次の内容をもとに、初めて読む人でも迷わず作業・操作できるマニュアルを作成してください。",
-    quality:["手順は実行可能な粒度に分割し、1ステップに1つの操作だけを書く","作業を始める前に必要な前提条件・準備物をまとめて明記する","つまずきやすい箇所には注意点や、うまくいかない場合の対処を添える","専門用語は初出の箇所で簡潔に説明する","手順どおりに進めれば、実際の画面や状態を見なくても次に何をすべきか分かる順序・書き方にする"],
-    tone:2, length:4, format:"手順ステップ", lengthKind:"depth", method:[], stability:["フォーマット厳守"] },
+    quality:["手順は実行可能な粒度に分割し、1ステップに1つの操作だけを書く","作業を始める前に必要な前提条件・準備物をまとめて明記する","つまずきやすい箇所には注意点や、うまくいかない場合の対処を添える","専門用語は初出の箇所で簡潔に説明する","手順どおりに進めれば、実際の画面や状態を見なくても次に何をすべきか分かる順序・書き方にする","埋め草の節・重複した要約・定型文で分量を水増ししない"],
+    tone:2, length:2, format:"手順ステップ", lengthKind:"depth", method:[], stability:["フォーマット厳守"] },
 
   rating:{ ico:"📊", nm:"評価・採点", grp:"basic", role:"客観的な評価基準を設計する評価者",
     model:{tier:"mid", name:"Sonnet", effort:"中", why:"基準設計と採点の一貫性が中心。標準モデルで安定する"},
     label:"評価してほしい内容を貼り付けてください",
     task:"次の内容を評価してください。ただし採点にいきなり入らず、まず対象の性質に合った評価観点を5つ提案し、その観点で評価してよいかユーザーに確認してください。承認（または修正指示）を受け取ってから、確定した5観点で採点に進んでください。",
     quality:["最初の応答では採点をせず、提案する5つの評価観点とそれぞれの選定理由だけを示し、ユーザーの確認を求めて止まる","5つの観点は互いに意味が重複せず、対象の性質に照らして独立した切り口にする","確認が取れたら、各観点を10点満点で採点し、その点数にした根拠を一言添える","5観点の合計・平均に加え、最も改善余地が大きい観点を1つ明示する"],
-    tone:1, length:4, format:"表", lengthKind:"depth", method:["根拠を示す"], stability:["不明点は先に質問","フォーマット厳守"] },
+    tone:1, length:2, format:"表", lengthKind:"depth", method:["根拠を示す"], stability:["フォーマット厳守"] },
 
   polish:{ ico:"✨", nm:"仕上げ", grp:"basic", role:"成果物を提出・公開できる水準まで引き上げる編集責任者",
     model:{tier:"high", name:"Fable / Opus", effort:"中", why:"最終品質が成果物の印象を決める。最後の詰めは高性能モデルが明確に強い"},
     label:"ほぼ完成した成果物と、気になっている点があれば貼り付けてください",
     task:"次の、ほぼ完成した成果物を最終仕上げしてください。目的は、これ以上直す必要がない「そのまま提出・公開できる完成品」にすることです。ゼロから作り直すのではなく、完成度を上げる調整だけを行ってください。",
     quality:["内容や構成を大きく作り変えず、完成度を上げる修正に限定する（作り直しではなく仕上げ）","誤字脱字・表記ゆれ・用語・トーンを全体で統一し、細部の粗をなくす","事実の矛盾・抜け漏れ・つながりの悪い箇所など、提出前に直すべき欠陥を洗い出して直す","仕上げた最終成果物を省略せず完全な形で出力し、そのあとに「直した点」と「あえて残した点（理由つき）」を一覧で添える"],
-    tone:2, length:4, format:"おまかせ", lengthKind:"depth", method:[], stability:["フォーマット厳守","最後に自己チェック"] },
+    tone:2, length:2, format:"おまかせ", lengthKind:"depth", method:[], stability:["フォーマット厳守"] },
 
   mdlog:{ ico:"🗂️", nm:"作業まとめ", grp:"basic", role:"作業記録を構造化データとして整理するテクニカルライター",
     model:{tier:"low", name:"Haiku / Sonnet", effort:"小", why:"要約と整形が中心の定型作業。速いモデルで十分な品質が出る"},
     label:"まとめたい作業内容・会話ログ・変更点を貼り付けてください",
     task:"次の作業内容を、人間が読めて、かつコンピューターが機械的にパースできるMarkdown文書として構造化してください。人間向けの自由な文章ではなく、後続処理（検索・突合・自動判定）でも一意に読み取れる、キーが固定された形式にすることが目的です。",
     quality:["先頭にYAMLフロントマター（---で挟む）を置き、status: done|partial|blocked、inputs: [配列]、outputs: [配列] をキーとして持たせる","本文はMarkdown見出しで「## 作業概要」「## 使ったインプット」「## アウトプット一覧」「## 特記事項」の4つに固定し、この順序・表記を一字一句変えない","アウトプット一覧は各項目を「- `ファイル名` — 説明」の1行1形式に統一し、この形式以外の書き方をしない","フロントマターと本文の内容は矛盾させない（フロントマターのoutputsと本文のアウトプット一覧は同じファイル名を指す）","値は同じ意味なら常に同じ表記に正規化する（表記ゆれを許さない）。該当情報がなくてもキー・見出し自体は省略しない","時系列の経過ではなく、最終的な状態（何がどう変わったか）のみを記述する"],
-    tone:0, length:1, format:"見出し付き", method:[], stability:["フォーマット厳守"] },
+    tone:0, length:1, format:"見出し付き", lengthKind:"none", method:[], stability:["フォーマット厳守"] },
 
   free:{ ico:"⚙️", nm:"自由", grp:"basic", role:"",
     model:{tier:"any", name:"内容による", effort:"−", why:"軽い作業はHaiku、判断の重い作業はFable / Opusを選ぶ"},
     label:"AIにしてほしいことを自由に書いてください",
     task:"", quality:[],
-    tone:2, length:4, format:"おまかせ", lengthKind:"depth", method:[], stability:[] },
+    tone:2, length:2, format:"おまかせ", lengthKind:"depth", method:[], stability:[] },
 
   /* ---- 開発ワークフロー：モデル使い分けの3工程 ---- */
   design:{ ico:"🏗️", nm:"① 設計・構造", grp:"dev", role:"システム全体を見通せるソフトウェアアーキテクト",
@@ -576,7 +579,7 @@ const PRESETS = {
     label:"作りたいもの・解決したい課題を書いてください",
     task:"実装に入る前の設計を行ってください。目的は、あとからやり直しが高くつく判断をこの段階で正しく行うことです。コードは書かず、設計だけを出力してください。",
     quality:["全体構成・データ構造・処理の流れを先に示す","重要な設計判断には選択肢を複数挙げ、採用する理由と捨てる理由を添える","あとから変更しにくい箇所（やり直しコストが高い判断）を明示する","実装コードは書かない（構成の説明と疑似コードまで）"],
-    tone:1, length:4, format:"見出し付き", lengthKind:"depth", method:["根拠を示す","反対意見も検討する"], stability:["不明点は先に質問"] },
+    tone:1, length:3, format:"見出し付き", lengthKind:"depth", method:["根拠を示す"], stability:["不明点は先に質問"] },
 
   build:{ ico:"🔁", nm:"② 実装・反復", grp:"dev", role:"仕様を正確に実装するエンジニア",
     model:{tier:"low", name:"Haiku / Sonnet", effort:"小", why:"仕様が明確なら差が出にくい。速くて安いモデルで数をこなす"},
@@ -634,7 +637,7 @@ Object.entries(PRESETS).forEach(([key,p])=>{
 const TIER_ICO = {high:"🧠", mid:"⚖️", low:"⚡", any:"🔀"};
 /* effort（思考の深さ）の推奨値。公式ガイドの既定は high で、
    難しい作業は xhigh、定型作業は low〜medium に下げるのが推奨 */
-const TIER_EFFORT = {high:"high〜xhigh", mid:"high", low:"low〜medium", any:"内容に応じて"};
+const TIER_EFFORT = {high:"high〜xhigh", mid:"high", low:"low〜medium（effort対応モデルの場合）", any:"内容に応じて"};
 function syncModelStrip(p){
   const s=document.getElementById("modelStrip");
   s.dataset.tier=p.model.tier;
@@ -692,7 +695,8 @@ function syncSliders(){
   document.getElementById("toneSlider").value=state.tone;
   document.getElementById("lengthSlider").value=state.length;
   [...document.getElementById("toneTicks").children].forEach((s,i)=>s.classList.toggle("on",i===state.tone));
-  [...document.getElementById("lengthTicks").children].forEach((s,i)=>s.classList.toggle("on",i===state.length));
+  const lt=document.getElementById("lengthTicks");
+  if(lt) [...lt.children].forEach((s,i)=>s.classList.toggle("on",i===state.length));
 }
 
 /* ===== AIっぽさ特徴（スイッチ） ===== */
@@ -722,12 +726,20 @@ function toggleAllTraits(){
 function applyPreset(key){
   const p=PRESETS[key];
   state.preset=key; state.tone=p.tone; state.length=p.length; state.format=p.format;
-  state.method=[...p.method]; state.stability=[...p.stability];
+  state.method=[...p.method];
+  /* 高性能モデル向けプリセットでは自己検証の指示を既定から外す。
+     公式：Fable 5 / Opus 5 は指示なしでも自己検証するため、書くと過剰検証になる。
+     分岐をここ1か所に集約し、既定値と最終指示の食い違いを防ぐ */
+  state.stability=p.stability.filter(s=>!(p.model.tier==="high" && s==="最後に自己チェック"));
   document.getElementById("role").value=p.role;
   document.getElementById("contentLabel").textContent=p.label;
   document.querySelectorAll(".preset").forEach(el=>el.classList.toggle("active",el.dataset.key===key));
   syncSeg("struct",false); syncSeg("format",false); syncSeg("method",true); syncSeg("stability",true);
-  buildTicks("lengthTicks", lengthLevelsOf(p), "length");
+  /* 分量を指定しない用途ではスライダーごと隠す */
+  const levels=lengthLevelsOf(p);
+  document.getElementById("lengthField").style.display = levels ? "" : "none";
+  document.getElementById("lengthNone").style.display = levels ? "none" : "";
+  if(levels) buildTicks("lengthTicks", levels, "length");
   syncSliders();
   syncModelStrip(p);
   generate();
@@ -747,48 +759,77 @@ function buildSections(){
         audience=v("audience"), example=v("example"), ban=v("ban");
   const pre=[], post=[];
 
-  if(role) pre.push({t:"役割", tag:"role", c:3,
-    b:`あなたは${role}です。その専門家として判断し、平均的な回答ではなく専門家水準の成果物を出してください。`});
+  /* 散文モード：出力を「文章」にしたい場合、プロンプト側も箇条書きをやめる。
+     公式指針「プロンプトのスタイルを望む出力に合わせる」に対応（箇条書きの
+     プロンプトは箇条書きの出力を誘発するため） */
+  const prose = state.format==="文章" || state.traits.includes("bullet");
+  const list = items => prose
+    ? items.map(s=>s.replace(/^- /,"")).map(s=>s.endsWith("。")?s:s+"。").join("")
+    : items.map(s=>s.startsWith("- ")?s:"- "+s).join("\n");
+
+  if(role) pre.push({t:"役割", tag:"role", c:3, b:`あなたは${role}です。`});
 
   if(context) pre.push({t:"背景・前提", tag:"context", c:3, b:context});
 
   const askSec={t:"依頼", tag:"instructions", c:1, b:(p.task || "以下について対応してください。")};
 
-  const body = content || "（ここに内容を貼り付けてください）";
+  /* 未入力時は公式例に倣ったテンプレート変数記法にし、内容と誤認されないようにする */
+  const body = content || "{{ここに内容を貼り付け}}";
   const inputSec={t:"対象・内容", tag:"input", c:2,
     b:`"""\n${body}\n"""`, bx:body};
 
-  if(state.r80) post.push({t:"R80ルール（必須・最優先で守る）", tag:"r80_rule", c:1, b:R80_TEXT});
+  if(state.r80) post.push({t:"R80ルール", tag:"r80_rule", c:1, b:R80_TEXT});
 
   if(audience) post.push({t:"対象読者", tag:"audience", c:3,
     b:`${audience}。この読者の知識レベルに合わせ、伝わらない専門用語には説明を添えてください。`});
 
   const lengthLevels = lengthLevelsOf(p);
-  const cond=[
-    `- 文体：${TONE_LEVELS[state.tone].text}`,
-    `- 分量：${lengthLevels[state.length].text}`
-  ];
-  if(state.format!=="おまかせ") cond.push(`- 形式：${formatText(state.format)}`);
-  post.push({t:"出力条件", tag:"output_format", c:3, b:cond.join("\n")});
+  const cond=[`文体：${TONE_LEVELS[state.tone].text}`];
+  if(lengthLevels) cond.push(`分量：${lengthLevels[state.length].text}`);
+  if(state.format!=="おまかせ") cond.push(`形式：${formatText(state.format)}`);
+  post.push({t:"出力条件", tag:"output_format", c:3, b:list(cond)});
 
-  if(example) post.push({t:"お手本の例", tag:"examples", c:3,
-    b:`次の例の形式・トーンに厳密に合わせてください。\n"""\n${example}\n"""`,
-    bx:`次の例の形式・トーンに厳密に合わせてください。\n<example>\n${example}\n</example>`});
-
-  const proc=[];
-  state.method.forEach(m=>proc.push("- "+methodText(m)));
-  state.stability.forEach(s=>proc.push("- "+stabilityText(s)));
-  if(proc.length) post.push({t:"進め方", tag:"process", c:3, b:proc.join("\n")});
-
-  if(p.quality.length) post.push({t:"品質基準（すべて満たすこと）", tag:"quality_criteria", c:1,
-    b:p.quality.map(q=>"- "+q).join("\n")});
-
-  if(state.traits.length){
-    const rules=TRAITS.filter(t=>state.traits.includes(t.k)).map(t=>"- "+t.rule);
-    post.push({t:"文体（人間が書いた自然な文章にするため）", tag:"writing_style", c:4, b:rules.join("\n")});
+  /* お手本は --- 区切りで複数指定できる（公式推奨は3〜5例） */
+  if(example){
+    const exs=example.split(/^\s*---\s*$/m).map(s=>s.trim()).filter(Boolean);
+    const lead="次の例の形式・トーンに合わせてください。";
+    post.push({t:"お手本の例", tag:"examples", c:3,
+      b:`${lead}\n`+exs.map(e=>`"""\n${e}\n"""`).join("\n"),
+      bx:`${lead}\n`+exs.map(e=>`<example>\n${e}\n</example>`).join("\n")});
   }
 
-  if(ban) post.push({t:"禁止事項", tag:"constraints", c:3, b:"- "+ban});
+  /* 「結論から述べる」と文体の「定型的な前置き」は趣旨が重なるため、
+     両方選ばれたときは1文に統合して重複を避ける */
+  const mergeLead = state.stability.includes("結論から述べる") && state.traits.includes("intro");
+
+  const proc=[];
+  state.method.forEach(m=>proc.push(methodText(m)));
+  /* 長文入力モードでは、公式推奨の「先に関連箇所を引用させる」を自動で加える */
+  if(state.longInput && !state.method.includes("関連箇所を引用してから答える"))
+    proc.push(methodText("関連箇所を引用してから答える"));
+  state.stability.forEach(s=>{
+    if(mergeLead && s==="結論から述べる")
+      proc.push("前置きや挨拶を書かず、一文目で結論・要点を述べてから詳細を説明する");
+    else proc.push(stabilityText(s));
+  });
+  if(proc.length) post.push({t:"進め方", tag:"process", c:3, b:list(proc)});
+
+  if(p.quality.length) post.push({t:"品質基準（すべて満たすこと）", tag:"quality_criteria", c:1,
+    b:list(p.quality)});
+
+  /* 文体ルール：3つ以上選ばれたら個別列挙をやめて短い統合指示にする。
+     公式指針「各動作を名前で列挙するのではなく、簡潔な指示でほとんどの動作を
+     制御できる／短い簡潔さの指示は各パターンを列挙するのと同じくらい効果的」に対応 */
+  const picked = TRAITS.filter(t=>state.traits.includes(t.k) && !(mergeLead && t.k==="intro"));
+  if(picked.length){
+    const styleBody = picked.length>=3
+      ? "人間が書いた自然な文章にする。一文目から本題に入り、言い切れることは言い切り、密度の高い文章にする。"
+        +`特に次を避ける：${picked.map(t=>t.t).join("、")}。`
+      : list(picked.map(t=>t.rule));
+    post.push({t:"文体（人間が書いた自然な文章にするため）", tag:"writing_style", c:4, b:styleBody});
+  }
+
+  if(ban) post.push({t:"禁止事項", tag:"constraints", c:3, b:list([ban])});
 
   /* 長文入力モードでは素材を先頭・依頼を末尾に置く（公式推奨の並び） */
   const secs = state.longInput
@@ -817,6 +858,11 @@ function generate(){
   }).join("\n\n");
   document.getElementById("outRaw").textContent=raw;
   document.getElementById("cc").textContent=raw.length+" 文字";
+
+  /* 指示・素材・例が混在するときはXMLのほうが誤読が少ない（公式指針）ので勧める */
+  const mixed = state.longInput || !!document.getElementById("example").value.trim();
+  document.getElementById("structHint").textContent =
+    (mixed && !xml) ? "長い素材やお手本を含むときは「XMLタグ」のほうが、指示と素材の境目を誤読されにくくなります。" : "";
 
   /* 整形ビュー */
   const pretty=document.getElementById("outPretty");
@@ -849,19 +895,19 @@ function formatText(v){
 }
 function methodText(v){
   return {
-    "順を追って考える":"結論を出す前に、前提の整理→検討→結論の順で段階的に考える",
+    "順を追って考える":"回答を、前提の整理→検討→結論の順に構成する",
     "複数の案を出す":"単一の答えではなく複数の選択肢を示し、それぞれの長所・短所を添える",
     "根拠を示す":"すべての主張に、理由・根拠・出典のいずれかを添える",
     "反対意見も検討する":"自分の結論への最も強い反論を挙げ、それに答えてから結論を出す",
     "関連箇所を引用してから答える":"回答の前に、対象の中から関連する箇所を引用して示し、その引用にもとづいて答える（長い資料では該当箇所に集中できるため）",
-    "徹底的に作り込む":"基本的な対応にとどまらず、関連する要素を可能な限り盛り込んで、完成度の高い成果物にする",
+    "新規制作を作り込む":"新しく作るもの（UI・作品・企画など）については、基本的な対応にとどまらず、関連する要素を盛り込んで完成度を高める。ただし既存物の修正では適用せず、求められた範囲を超えて手を入れない",
     "スコープを広げない":"依頼された範囲の作業を完遂し、それを超える改善・追加・作り替えはしない。より良い方法があると思う場合は、一文で指摘してから依頼どおりに進める"
   }[v]||v;
 }
 function stabilityText(v){
   return {
     "結論から述べる":"最初の1〜2文で結論・要点を述べ、そのあとで詳細を説明する",
-    "不明点は先に質問":"依頼内容に不明点・複数の解釈がある場合は、作業せず先に質問だけを返す",
+    "不明点は先に質問":"解釈の違いによって成果物が実質的に変わる場合にのみ、作業前に質問する。それ以外は最も妥当な解釈を選んで進め、採用した解釈を一行で明記する",
     "フォーマット厳守":"指定した出力形式を毎回一字一句同じ構造で守る（項目の追加・省略をしない）",
     "推測で断定しない":"事実として確認できない点は推測で断定せず、「不明」または推測である旨を明記する",
     "最後に自己チェック":"出力の最後に、指示をすべて満たしたかのセルフチェック結果を1行で添える"
@@ -879,12 +925,20 @@ function switchTab(pretty){
 /* ===== コピー／リセット ===== */
 function copyOut(){
   const t=document.getElementById("outRaw").textContent;
-  navigator.clipboard.writeText(t).then(showToast,()=>{
+  /* 未入力のままだとテンプレート変数がそのままAIに渡るため、コピー時に知らせる */
+  const empty = !document.getElementById("content").value.trim();
+  navigator.clipboard.writeText(t).then(()=>showToast(empty),()=>{
     const ta=document.createElement("textarea"); ta.value=t; document.body.appendChild(ta);
-    ta.select(); document.execCommand("copy"); ta.remove(); showToast();
+    ta.select(); document.execCommand("copy"); ta.remove(); showToast(empty);
   });
 }
-function showToast(){ const t=document.getElementById("toast"); t.classList.add("show"); setTimeout(()=>t.classList.remove("show"),1500); }
+function showToast(empty){
+  const t=document.getElementById("toast");
+  t.textContent = empty
+    ? "コピーしました（内容は未入力：{{ここに内容を貼り付け}} を置き換えてください）"
+    : "コピーしました";
+  t.classList.add("show"); setTimeout(()=>t.classList.remove("show"), empty?2800:1500);
+}
 function resetAll(){
   ["content","context","audience","example","ban"].forEach(id=>document.getElementById(id).value="");
   state.traits=[]; syncTraits();
