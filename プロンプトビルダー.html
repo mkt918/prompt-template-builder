@@ -98,6 +98,13 @@
   .model-strip[data-tier="low"]{background:#e8f8f4; border-color:#a9e2d4;}
   .model-strip[data-tier="any"]{background:#f1f3f6; border-color:#d5dae2;}
 
+  /* モデル / エフォートの用語説明（常時表示） */
+  .concept-note{
+    margin-top:8px; border-radius:12px; padding:10px 14px; font-size:12px; line-height:1.6;
+    background:#f7f8fa; border:1.5px dashed var(--line); color:#555;
+  }
+  .concept-note b{color:var(--text);}
+
   /* ===== inputs ===== */
   textarea, input[type=text]{
     width:100%; padding:13px 14px; border:1.5px solid var(--line); border-radius:12px;
@@ -271,6 +278,10 @@
       <div class="grp-label">🛠️ 開発ワークフロー（モデル使い分けの3工程）</div>
       <div class="presets" id="presetsDev"></div>
       <div class="model-strip" id="modelStrip"></div>
+      <div class="concept-note">
+        <b>モデル</b>＝生成される内容の「質の上限」（知識・判断力の差）を決める。<br>
+        <b>エフォート</b>＝ファイルの読み込み量ではなく「思考の深さ」の調整。上げるほど内部でじっくり考える分、精度は上がるがコストと時間も増える（コード調査などで結果的に読む量が増えるのは、思考が深くなった副作用）。
+      </div>
     </div>
 
     <!-- STEP 2 -->
@@ -411,6 +422,12 @@ const TONE_LEVELS = [
   {label:"丁寧",     text:"丁寧で礼儀正しく、読み手への配慮が伝わる文体で書く"},
   {label:"フォーマル",text:"格式のあるフォーマルな文体で書く。敬語を正確に使う"}
 ];
+/* ===== 分量：用途によって「大きい」の意味が違うため、
+   物差し（lengthKind）ごとに別の5段階を用意する =====
+   - prose：字数がそのまま伝達コストになる文章（要約・メール等）
+   - code ：字数ではなく実装の作り込み度で測るべきもの
+   - depth：字数でも作り込み度でもなく、検討・網羅の深さで測るべきもの
+            （アイデア出し・レビュー・評価・添削・仕上げ・設計など） */
 const LENGTH_LEVELS = [
   {label:"最小限", text:"100字程度。要点のみに絞る"},
   {label:"短め",   text:"300字程度。核心を過不足なく伝える"},
@@ -418,8 +435,6 @@ const LENGTH_LEVELS = [
   {label:"詳しめ", text:"1200字程度。具体例や補足も交えて掘り下げる"},
   {label:"徹底的", text:"字数の上限なし。網羅的かつ深く掘り下げる"}
 ];
-/* コード・実装系の成果物には文字数の指標は無意味なので、
-   実装範囲・作り込みの度合いで表現する専用レベルを用意する */
 const CODE_LENGTH_LEVELS = [
   {label:"最小限", text:"必要な変更点だけに絞った最小限の差分にする。周辺の整理や最適化はしない"},
   {label:"短め",   text:"要件を満たす範囲にとどめ、余分な処理や抽象化を増やさない"},
@@ -427,6 +442,15 @@ const CODE_LENGTH_LEVELS = [
   {label:"詳しめ", text:"主要なエッジケース（空入力・異常系など）への対応まで含めて作り込む"},
   {label:"徹底的", text:"エッジケース・エラー処理・想定される利用パターンまで網羅し、規模を惜しまず作り込む"}
 ];
+const DEPTH_LEVELS = [
+  {label:"最小限", text:"誰の目にも明らかな範囲だけを扱い、細部までは踏み込まない"},
+  {label:"コンパクト", text:"主要な点はカバーしつつ、深追いはせずコンパクトにまとめる"},
+  {label:"標準",   text:"この種の作業で一般的に期待される範囲を、過不足なくカバーする"},
+  {label:"掘り下げ", text:"見落としやすい点や周辺の論点まで踏み込んで検討する"},
+  {label:"徹底的", text:"考えられる限りの観点・パターン・ケースを洗い出し、抜け漏れがない状態にする"}
+];
+const LENGTH_LEVEL_SETS = {prose:LENGTH_LEVELS, code:CODE_LENGTH_LEVELS, depth:DEPTH_LEVELS};
+function lengthLevelsOf(p){ return LENGTH_LEVEL_SETS[p.lengthKind] || LENGTH_LEVELS; }
 
 /* ===== AIっぽい文章の特徴 → 除去指示 =====
    ※ 公式のプロンプト指針に沿い、rule は「してはいけないこと」ではなく
@@ -503,35 +527,35 @@ const PRESETS = {
     label:"考えたいテーマ・お題を書いてください",
     task:"次のテーマについてアイデアを出してください。目的は選択肢を広げることなので、質より量と多様性を優先してください。",
     quality:["切り口の異なる案を最低8個出す","無難な案だけでなく、意外性のある案を必ず混ぜる","各案に一言で「狙い」を添える","似た案を水増ししない"],
-    tone:1, length:4, format:"箇条書き", method:["複数の案を出す"], stability:[] },
+    tone:1, length:4, format:"箇条書き", lengthKind:"depth", method:["複数の案を出す"], stability:[] },
 
   proof:{ ico:"🔍", nm:"添削・校正", grp:"basic", role:"厳密で丁寧な校正者",
     model:{tier:"mid", name:"Sonnet", effort:"中", why:"ルールベースの確認が中心。標準モデルで安定する"},
     label:"添削してほしい文章を貼り付けてください",
     task:"次の文章を校正・添削してください。誤りの指摘と修正版の両方を出力してください。",
     quality:["誤字脱字→文法→表現→論理の順に段階的にチェックする","指摘には必ず理由を添える","元の文体や意図は変えず、必要な修正だけを行う","問題のない箇所を無理に直さない"],
-    tone:2, length:4, format:"見出し付き", method:["根拠を示す"], stability:["フォーマット厳守"] },
+    tone:2, length:4, format:"見出し付き", lengthKind:"depth", method:["根拠を示す"], stability:["フォーマット厳守"] },
 
   manual:{ ico:"📘", nm:"マニュアル作成", grp:"basic", role:"分かりやすい手順を設計するテクニカルライター",
     model:{tier:"low", name:"Haiku / Sonnet", effort:"小", why:"整理と構成が中心の定型作業。速いモデルで十分な品質が出る"},
     label:"マニュアル化したい作業内容・操作手順を書いてください",
     task:"次の内容をもとに、初めて読む人でも迷わず作業・操作できるマニュアルを作成してください。",
     quality:["手順は実行可能な粒度に分割し、1ステップに1つの操作だけを書く","作業を始める前に必要な前提条件・準備物をまとめて明記する","つまずきやすい箇所には注意点や、うまくいかない場合の対処を添える","専門用語は初出の箇所で簡潔に説明する","手順どおりに進めれば、実際の画面や状態を見なくても次に何をすべきか分かる順序・書き方にする"],
-    tone:2, length:4, format:"手順ステップ", method:[], stability:["フォーマット厳守"] },
+    tone:2, length:4, format:"手順ステップ", lengthKind:"depth", method:[], stability:["フォーマット厳守"] },
 
   rating:{ ico:"📊", nm:"評価・採点", grp:"basic", role:"客観的な評価基準を設計する評価者",
     model:{tier:"mid", name:"Sonnet", effort:"中", why:"基準設計と採点の一貫性が中心。標準モデルで安定する"},
     label:"評価してほしい内容を貼り付けてください",
     task:"次の内容を評価してください。ただし採点にいきなり入らず、まず対象の性質に合った評価観点を5つ提案し、その観点で評価してよいかユーザーに確認してください。承認（または修正指示）を受け取ってから、確定した5観点で採点に進んでください。",
     quality:["最初の応答では採点をせず、提案する5つの評価観点とそれぞれの選定理由だけを示し、ユーザーの確認を求めて止まる","5つの観点は互いに意味が重複せず、対象の性質に照らして独立した切り口にする","確認が取れたら、各観点を10点満点で採点し、その点数にした根拠を一言添える","5観点の合計・平均に加え、最も改善余地が大きい観点を1つ明示する"],
-    tone:1, length:4, format:"表", method:["根拠を示す"], stability:["不明点は先に質問","フォーマット厳守"] },
+    tone:1, length:4, format:"表", lengthKind:"depth", method:["根拠を示す"], stability:["不明点は先に質問","フォーマット厳守"] },
 
   polish:{ ico:"✨", nm:"仕上げ", grp:"basic", role:"成果物を提出・公開できる水準まで引き上げる編集責任者",
     model:{tier:"high", name:"Fable / Opus", effort:"中", why:"最終品質が成果物の印象を決める。最後の詰めは高性能モデルが明確に強い"},
     label:"ほぼ完成した成果物と、気になっている点があれば貼り付けてください",
     task:"次の、ほぼ完成した成果物を最終仕上げしてください。目的は、これ以上直す必要がない「そのまま提出・公開できる完成品」にすることです。ゼロから作り直すのではなく、完成度を上げる調整だけを行ってください。",
     quality:["内容や構成を大きく作り変えず、完成度を上げる修正に限定する（作り直しではなく仕上げ）","誤字脱字・表記ゆれ・用語・トーンを全体で統一し、細部の粗をなくす","事実の矛盾・抜け漏れ・つながりの悪い箇所など、提出前に直すべき欠陥を洗い出して直す","仕上げた最終成果物を省略せず完全な形で出力し、そのあとに「直した点」と「あえて残した点（理由つき）」を一覧で添える"],
-    tone:2, length:4, format:"おまかせ", method:[], stability:["フォーマット厳守","最後に自己チェック"] },
+    tone:2, length:4, format:"おまかせ", lengthKind:"depth", method:[], stability:["フォーマット厳守","最後に自己チェック"] },
 
   mdlog:{ ico:"🗂️", nm:"作業まとめ", grp:"basic", role:"作業記録を構造化データとして整理するテクニカルライター",
     model:{tier:"low", name:"Haiku / Sonnet", effort:"小", why:"要約と整形が中心の定型作業。速いモデルで十分な品質が出る"},
@@ -544,7 +568,7 @@ const PRESETS = {
     model:{tier:"any", name:"内容による", effort:"−", why:"軽い作業はHaiku、判断の重い作業はFable / Opusを選ぶ"},
     label:"AIにしてほしいことを自由に書いてください",
     task:"", quality:[],
-    tone:2, length:4, format:"おまかせ", method:[], stability:[] },
+    tone:2, length:4, format:"おまかせ", lengthKind:"depth", method:[], stability:[] },
 
   /* ---- 開発ワークフロー：モデル使い分けの3工程 ---- */
   design:{ ico:"🏗️", nm:"① 設計・構造", grp:"dev", role:"システム全体を見通せるソフトウェアアーキテクト",
@@ -552,7 +576,7 @@ const PRESETS = {
     label:"作りたいもの・解決したい課題を書いてください",
     task:"実装に入る前の設計を行ってください。目的は、あとからやり直しが高くつく判断をこの段階で正しく行うことです。コードは書かず、設計だけを出力してください。",
     quality:["全体構成・データ構造・処理の流れを先に示す","重要な設計判断には選択肢を複数挙げ、採用する理由と捨てる理由を添える","あとから変更しにくい箇所（やり直しコストが高い判断）を明示する","実装コードは書かない（構成の説明と疑似コードまで）"],
-    tone:1, length:4, format:"見出し付き", method:["根拠を示す","反対意見も検討する"], stability:["不明点は先に質問"] },
+    tone:1, length:4, format:"見出し付き", lengthKind:"depth", method:["根拠を示す","反対意見も検討する"], stability:["不明点は先に質問"] },
 
   build:{ ico:"🔁", nm:"② 実装・反復", grp:"dev", role:"仕様を正確に実装するエンジニア",
     model:{tier:"low", name:"Haiku / Sonnet", effort:"小", why:"仕様が明確なら差が出にくい。速くて安いモデルで数をこなす"},
@@ -566,7 +590,7 @@ const PRESETS = {
     label:"レビュー対象（コードや文章）と、見てほしい観点を書いてください",
     task:"次の対象を、指定した観点に絞って徹底的にレビューしてください。範囲を絞るのは見落としをなくすためです。この段階での目的は網羅性であり、重要度による取捨選択は行わないでください。",
     quality:["指定された観点・範囲だけを深く見る（範囲外に広げない）","見つけた問題はすべて報告する。確信が持てないものや軽微に見えるものも省かない（本物のバグを黙って落とすほうが、後で除外される指摘を挙げるより損失が大きいため）","各指摘に「確信度」と「重大度」を明記し、あとから絞り込める形にする","各指摘に根拠と具体的な修正案を付け、重大度の高い順に並べる","純粋な好みの問題（命名やスタイルの趣味）だけは省いてよい。問題が本当にない場合は「問題なし」と明言する"],
-    tone:1, length:4, format:"見出し付き", method:["根拠を示す"], stability:["結論から述べる","推測で断定しない"] }
+    tone:1, length:4, format:"見出し付き", lengthKind:"depth", method:["根拠を示す"], stability:["結論から述べる","推測で断定しない"] }
 };
 
 /* ===== 状態 ===== */
@@ -654,6 +678,8 @@ function buildTicks(elId, levels, key){
   });
 }
 buildTicks("toneTicks",TONE_LEVELS,"tone");
+/* lengthTicks は用途（lengthKind）ごとにラベルが変わるため、
+   プリセット切替のたびに buildTicks("lengthTicks", lengthLevelsOf(p), "length") で再構築する */
 buildTicks("lengthTicks",LENGTH_LEVELS,"length");
 
 document.getElementById("toneSlider").addEventListener("input",e=>{
@@ -701,6 +727,7 @@ function applyPreset(key){
   document.getElementById("contentLabel").textContent=p.label;
   document.querySelectorAll(".preset").forEach(el=>el.classList.toggle("active",el.dataset.key===key));
   syncSeg("struct",false); syncSeg("format",false); syncSeg("method",true); syncSeg("stability",true);
+  buildTicks("lengthTicks", lengthLevelsOf(p), "length");
   syncSliders();
   syncModelStrip(p);
   generate();
@@ -736,7 +763,7 @@ function buildSections(){
   if(audience) post.push({t:"対象読者", tag:"audience", c:3,
     b:`${audience}。この読者の知識レベルに合わせ、伝わらない専門用語には説明を添えてください。`});
 
-  const lengthLevels = p.lengthKind==="code" ? CODE_LENGTH_LEVELS : LENGTH_LEVELS;
+  const lengthLevels = lengthLevelsOf(p);
   const cond=[
     `- 文体：${TONE_LEVELS[state.tone].text}`,
     `- 分量：${lengthLevels[state.length].text}`
