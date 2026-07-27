@@ -1,0 +1,865 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>プロンプト定型文ビルダー</title>
+<style>
+  :root{
+    --bg:#f3f5f8; --card:#fff; --line:#e5e8ee; --text:#1b1f27; --muted:#8b93a1;
+    --c1:#4f6ef7; --c1-soft:#eef1ff;   /* step1 用途 */
+    --c2:#0ca789; --c2-soft:#e8f8f4;   /* step2 内容 */
+    --c3:#8b5cf6; --c3-soft:#f3eeff;   /* step3 調整 */
+    --c4:#f59e0b; --c4-soft:#fff6e6;   /* step4 文体 */
+    --gray:#64748b;
+    --radius:16px;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    font-family:"Segoe UI","Hiragino Kaku Gothic ProN",Meiryo,sans-serif;
+    margin:0; background:var(--bg); color:var(--text); line-height:1.6;
+  }
+
+  /* ===== header ===== */
+  header{
+    background:linear-gradient(120deg,#3d55d8,#6e5cf7 55%,#9a5cf0);
+    color:#fff; padding:26px 28px 22px;
+  }
+  .head-in{max-width:1200px; margin:0 auto;}
+  header h1{font-size:21px; margin:0; letter-spacing:.02em;}
+  header p{margin:4px 0 0; font-size:13px; opacity:.85;}
+
+  .wrap{
+    max-width:1200px; margin:0 auto; padding:24px 28px 70px;
+    display:grid; grid-template-columns:minmax(0,1fr) 420px; gap:22px; align-items:start;
+  }
+  @media(max-width:960px){ .wrap{grid-template-columns:1fr;} .preview{position:static !important;} }
+
+  /* ===== step cards ===== */
+  .card{
+    background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+    padding:20px 22px; margin-bottom:18px; box-shadow:0 1px 3px rgba(20,30,60,.04);
+  }
+  .card-head{display:flex; align-items:center; gap:10px; margin-bottom:14px;}
+  .badge{
+    width:26px; height:26px; border-radius:8px; color:#fff; font-size:13px; font-weight:700;
+    display:flex; align-items:center; justify-content:center; flex-shrink:0;
+  }
+  .card[data-step="1"] .badge{background:var(--c1);}
+  .card[data-step="2"] .badge{background:var(--c2);}
+  .card[data-step="3"] .badge{background:var(--c3);}
+  .card[data-step="4"] .badge{background:var(--c4);}
+  .card-head h2{font-size:15px; margin:0; font-weight:700;}
+  .card-head .hint{font-size:12px; color:var(--muted); font-weight:400; margin-left:2px;}
+
+  /* ===== presets ===== */
+  .presets{display:grid; grid-template-columns:repeat(4,1fr); gap:9px;}
+  @media(max-width:640px){ .presets{grid-template-columns:repeat(2,1fr);} }
+  .preset{
+    position:relative; background:#fafbfd; border:1.5px solid var(--line); border-radius:12px;
+    padding:13px 8px 11px; text-align:center; cursor:pointer; transition:.15s; user-select:none;
+  }
+  .preset:hover{border-color:var(--c1); background:#fff;}
+  .preset.active{border-color:var(--c1); background:var(--c1-soft); box-shadow:0 0 0 1px var(--c1);}
+  .preset .ico{font-size:23px; display:block; margin-bottom:4px;}
+  .preset .nm{font-size:12.5px; font-weight:700;}
+  .preset .chk{
+    position:absolute; top:-7px; right:-7px; width:20px; height:20px; border-radius:50%;
+    background:var(--c1); color:#fff; font-size:11px; display:none; align-items:center; justify-content:center;
+    box-shadow:0 1px 4px rgba(79,110,247,.5);
+  }
+  .preset.active .chk{display:flex;}
+
+  /* preset group labels */
+  .grp-label{font-size:11.5px; font-weight:700; color:var(--muted); margin:16px 0 8px; letter-spacing:.05em;}
+  .grp-label.first{margin-top:0;}
+
+  /* model badge on card */
+  .preset .mdl{
+    display:inline-block; margin-top:6px; font-size:9.5px; font-weight:700;
+    padding:2px 8px; border-radius:10px; color:#fff; letter-spacing:.02em;
+  }
+  .mdl.high{background:#7c3aed;}
+  .mdl.mid{background:#2563eb;}
+  .mdl.low{background:#0ca789;}
+  .mdl.any{background:#64748b;}
+
+  /* model recommendation strip */
+  .model-strip{
+    margin-top:14px; border-radius:12px; padding:11px 15px; font-size:12.5px;
+    display:flex; gap:10px; align-items:flex-start; border:1.5px solid var(--line); line-height:1.55;
+  }
+  .model-strip .m-ico{font-size:18px; line-height:1.2;}
+  .model-strip b{font-weight:700;}
+  .model-strip .m-why{color:#555; font-size:12px; display:block;}
+  .model-strip[data-tier="high"]{background:#f3eeff; border-color:#cdb6f7;}
+  .model-strip[data-tier="mid"]{background:#e9f0ff; border-color:#b9cdf8;}
+  .model-strip[data-tier="low"]{background:#e8f8f4; border-color:#a9e2d4;}
+  .model-strip[data-tier="any"]{background:#f1f3f6; border-color:#d5dae2;}
+
+  /* ===== inputs ===== */
+  textarea, input[type=text]{
+    width:100%; padding:13px 14px; border:1.5px solid var(--line); border-radius:12px;
+    font-size:14px; font-family:inherit; resize:vertical; background:#fafbfd; transition:.15s;
+  }
+  input[type=text]{padding:10px 12px; font-size:13.5px;}
+  textarea:focus, input:focus{outline:none; border-color:var(--c2); background:#fff;}
+  .card[data-step="3"] textarea:focus, .card[data-step="3"] input:focus{border-color:var(--c3);}
+  textarea#content{min-height:120px;}
+  .contentlabel{font-size:12.5px; color:var(--muted); margin-bottom:8px;}
+
+  .field{margin-bottom:18px;}
+  .field:last-child{margin-bottom:0;}
+  .field > .lab{font-size:13px; font-weight:700; margin-bottom:8px; display:flex; align-items:center; gap:6px;}
+  .field > .lab .hint{font-weight:400; font-size:11.5px; color:var(--muted);}
+
+  /* ===== sliders (5段階スナップ) ===== */
+  .sl{padding:0 4px;}
+  input[type=range]{
+    width:100%; cursor:pointer; -webkit-appearance:none; appearance:none; background:transparent; height:24px; margin:0;
+  }
+  input[type=range]::-webkit-slider-runnable-track{background:var(--line); height:6px; border-radius:6px;}
+  input[type=range]::-moz-range-track{background:var(--line); height:6px; border-radius:6px;}
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; width:20px; height:20px; border-radius:50%; background:var(--c3);
+    border:3.5px solid #fff; box-shadow:0 1px 6px rgba(139,92,246,.5); margin-top:-7px; cursor:grab;
+  }
+  input[type=range]::-moz-range-thumb{
+    width:20px; height:20px; border-radius:50%; background:var(--c3);
+    border:3.5px solid #fff; box-shadow:0 1px 6px rgba(139,92,246,.5); cursor:grab;
+  }
+  .ticks{display:flex; justify-content:space-between; margin-top:4px;}
+  .ticks span{
+    font-size:11.5px; color:var(--muted); width:20%; text-align:center; cursor:pointer; transition:.15s;
+  }
+  .ticks span:first-child{text-align:left;}
+  .ticks span:last-child{text-align:right;}
+  .ticks span.on{color:var(--c3); font-weight:700;}
+
+  /* ===== chips ===== */
+  .seg{display:flex; flex-wrap:wrap; gap:7px;}
+  .opt{
+    border:1.5px solid var(--line); background:#fafbfd; border-radius:20px;
+    padding:6px 14px; font-size:13px; cursor:pointer; transition:.13s; user-select:none;
+  }
+  .opt:hover{border-color:var(--c3);}
+  .opt.on{background:var(--c3); color:#fff; border-color:var(--c3);}
+
+  /* ===== advanced ===== */
+  details{border-top:1px dashed var(--line); margin-top:16px; padding-top:14px;}
+  summary{cursor:pointer; font-size:13px; font-weight:700; color:var(--c3); list-style:none; user-select:none;}
+  summary::-webkit-details-marker{display:none;}
+  summary::before{content:"▸ ";}
+  details[open] summary::before{content:"▾ ";}
+  .adv{margin-top:14px;}
+
+  /* ===== traits (switches) ===== */
+  .clean-head{display:flex; justify-content:flex-end; margin-bottom:10px;}
+  .mini{
+    border:1.5px solid var(--c4); background:#fff; color:#b25e00; border-radius:20px;
+    padding:5px 14px; font-size:12px; font-weight:700; cursor:pointer; transition:.15s;
+  }
+  .mini:hover{background:var(--c4); color:#fff;}
+  .traits{display:grid; grid-template-columns:1fr 1fr; gap:6px 14px;}
+  @media(max-width:640px){ .traits{grid-template-columns:1fr;} }
+  .trait{
+    display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:10px;
+    cursor:pointer; user-select:none; transition:.15s;
+  }
+  .trait:hover{background:var(--c4-soft);}
+  .trait.on{background:var(--c4-soft);}
+  .sw{
+    width:34px; height:20px; border-radius:20px; background:#d8dde5; position:relative; flex-shrink:0; transition:.18s;
+  }
+  .sw::after{
+    content:""; position:absolute; top:2.5px; left:3px; width:15px; height:15px; border-radius:50%;
+    background:#fff; transition:.18s; box-shadow:0 1px 3px rgba(0,0,0,.25);
+  }
+  .trait.on .sw{background:var(--c4);}
+  .trait.on .sw::after{left:16px;}
+
+  /* R80ルール トグル（step3 最上部） */
+  .r80-box{
+    display:flex; align-items:center; gap:12px; padding:12px 14px; border-radius:12px;
+    background:var(--c3-soft); border:1.5px solid #d9c8fb; margin-bottom:18px; cursor:pointer; user-select:none;
+  }
+  .r80-box .sw{background:#c9b8f0;}
+  .r80-box.on .sw{background:var(--c3);}
+  .r80-box .tx{font-size:12.5px; line-height:1.4;}
+  .r80-box .tx b{font-weight:700; display:block; font-size:13px;}
+  .r80-box .tx span{color:#6b5a94; font-size:11.5px;}
+  .trait .tx{font-size:12.5px; line-height:1.35;}
+  .trait .tx b{font-weight:700; display:block;}
+  .trait .tx span{color:#a07a3a; font-size:11px;}
+  .trait.on .tx b, .trait.on .tx span{text-decoration:line-through; opacity:.6;}
+
+  /* ===== preview ===== */
+  .preview{
+    position:sticky; top:16px; background:var(--card); border:1px solid var(--line);
+    border-radius:var(--radius); box-shadow:0 6px 24px rgba(30,40,80,.07); overflow:hidden;
+  }
+  .pv-head{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:14px 16px 0;
+  }
+  .pv-head h3{margin:0; font-size:14px;}
+  .pv-head .cc{font-size:11.5px; color:var(--muted);}
+  .tabs{display:flex; gap:2px; padding:10px 16px 0;}
+  .tab{
+    font-size:12px; font-weight:700; padding:6px 14px; border-radius:8px 8px 0 0; cursor:pointer;
+    color:var(--muted); background:transparent; border:1px solid transparent; border-bottom:none;
+  }
+  .tab.on{color:var(--c1); background:#fafbfd; border-color:var(--line);}
+  .pv-body{
+    background:#fafbfd; border-top:1px solid var(--line);
+    min-height:340px; max-height:56vh; overflow:auto; padding:14px 16px;
+  }
+  /* 整形ビュー */
+  .sec{
+    border-left:3px solid var(--gray); background:#fff; border-radius:0 10px 10px 0;
+    padding:9px 12px; margin-bottom:9px; box-shadow:0 1px 2px rgba(20,30,60,.05);
+  }
+  .sec .sec-t{
+    font-size:10.5px; font-weight:700; letter-spacing:.06em; margin-bottom:3px;
+    display:inline-block; padding:1px 8px; border-radius:10px; color:#fff; background:var(--gray);
+  }
+  .sec .sec-b{font-size:12.5px; white-space:pre-wrap; line-height:1.7;}
+  .sec[data-c="1"]{border-color:var(--c1);} .sec[data-c="1"] .sec-t{background:var(--c1);}
+  .sec[data-c="2"]{border-color:var(--c2);} .sec[data-c="2"] .sec-t{background:var(--c2);}
+  .sec[data-c="3"]{border-color:var(--c3);} .sec[data-c="3"] .sec-t{background:var(--c3);}
+  .sec[data-c="4"]{border-color:var(--c4);} .sec[data-c="4"] .sec-t{background:var(--c4);}
+  .sec.final{border-style:none; background:transparent; box-shadow:none; padding-top:2px;}
+  .sec.final .sec-b{font-size:11.5px; color:var(--muted);}
+  /* テキストビュー */
+  #outRaw{white-space:pre-wrap; font-size:12.5px; line-height:1.75; display:none;}
+
+  .pv-actions{display:flex; gap:8px; padding:12px 16px 16px; background:#fafbfd;}
+  button.act{
+    border:none; border-radius:10px; padding:12px; font-size:14px; font-weight:700; cursor:pointer; transition:.15s;
+  }
+  .primary{flex:1; background:var(--c1); color:#fff; box-shadow:0 3px 10px rgba(79,110,247,.35);}
+  .primary:hover{background:#3a56d4;}
+  .ghost{background:#eaedf2; color:#555; padding:12px 16px;}
+  .ghost:hover{background:#dde2ea;}
+
+  .toast{
+    position:fixed; bottom:26px; left:50%; transform:translateX(-50%) translateY(20px);
+    background:var(--text); color:#fff; padding:11px 24px; border-radius:30px; font-size:13.5px;
+    opacity:0; transition:.3s; pointer-events:none; z-index:99;
+  }
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="head-in">
+    <h1>⚡ プロンプト定型文ビルダー</h1>
+    <p>用途を選んで内容を入れるだけ。AIの返答が毎回安定する“型”をつくります。</p>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="main">
+
+    <!-- STEP 1 -->
+    <div class="card" data-step="1">
+      <div class="card-head"><span class="badge">1</span><h2>用途を選ぶ</h2><span class="hint">カード下のラベルは推奨モデル</span></div>
+      <div class="grp-label first">📌 定番タスク</div>
+      <div class="presets" id="presetsBasic"></div>
+      <div class="grp-label">🛠️ 開発ワークフロー（モデル使い分けの3工程）</div>
+      <div class="presets" id="presetsDev"></div>
+      <div class="model-strip" id="modelStrip"></div>
+    </div>
+
+    <!-- STEP 2 -->
+    <div class="card" data-step="2">
+      <div class="card-head"><span class="badge">2</span><h2>内容を入力</h2><span class="hint">空のままでもテンプレとして使えます</span></div>
+      <div class="contentlabel" id="contentLabel">依頼したい内容を書いてください</div>
+      <textarea id="content" placeholder="ここに入力…"></textarea>
+    </div>
+
+    <!-- STEP 3 -->
+    <div class="card" data-step="3">
+      <div class="card-head"><span class="badge">3</span><h2>微調整</h2><span class="hint">用途に応じて自動設定済み</span></div>
+
+      <div class="field">
+        <div class="lab">プロンプト構造 <span class="hint">AIが指示と素材を読み分ける枠組み</span></div>
+        <div class="seg" data-key="struct"></div>
+      </div>
+
+      <div class="r80-box" id="longBox" onclick="toggleLong()">
+        <div class="sw"></div>
+        <div class="tx"><b>長文入力モード</b><span>長い資料を貼るとき用。素材を先頭・依頼を末尾に置く（公式推奨。複数資料では品質が最大30%向上）</span></div>
+      </div>
+
+      <div class="r80-box" id="r80Box" onclick="toggleR80()">
+        <div class="sw"></div>
+        <div class="tx"><b>R80ルールを適用</b><span>2文構成・80字以内、2文目の先頭は指定の接続詞（順接・逆説・並列・対比・換言・説明）で始める</span></div>
+      </div>
+
+      <div class="field">
+        <div class="lab">トーン</div>
+        <div class="sl">
+          <input type="range" id="toneSlider" min="0" max="4" step="1" value="2">
+          <div class="ticks" id="toneTicks"></div>
+        </div>
+      </div>
+      <div class="field">
+        <div class="lab">分量</div>
+        <div class="sl">
+          <input type="range" id="lengthSlider" min="0" max="4" step="1" value="2">
+          <div class="ticks" id="lengthTicks"></div>
+        </div>
+      </div>
+      <div class="field"><div class="lab">出力形式</div><div class="seg" data-key="format"></div></div>
+
+      <details>
+        <summary>さらに細かく設定する（背景・お手本・手法など）</summary>
+        <div class="adv">
+          <div class="field">
+            <div class="lab">役割（AIの立場）</div>
+            <input type="text" id="role" placeholder="例：ベテランの編集者">
+          </div>
+          <div class="field">
+            <div class="lab">背景・前提 <span class="hint">「何のためか」を書くと精度が上がる</span></div>
+            <textarea id="context" style="min-height:56px" placeholder="例：社内向けの資料。読み手はITに詳しくない。承認を得るのが目的。"></textarea>
+          </div>
+          <div class="field">
+            <div class="lab">対象読者</div>
+            <input type="text" id="audience" placeholder="例：初心者 / 経営層 / 小学生">
+          </div>
+          <div class="field">
+            <div class="lab">お手本の例 <span class="hint">この形に寄せてほしい出力例</span></div>
+            <textarea id="example" style="min-height:56px" placeholder="例）Q: … A: … のような形式で"></textarea>
+          </div>
+          <div class="field">
+            <div class="lab">思考の手法</div>
+            <div class="seg" data-key="method"></div>
+          </div>
+          <div class="field">
+            <div class="lab">安定化オプション <span class="hint">挙動を毎回そろえる</span></div>
+            <div class="seg" data-key="stability"></div>
+            <div class="hint" style="margin-top:7px">※「最後に自己チェック」は Fable 5 / Opus 5 では外すのが公式推奨。指示しなくても自力で検証するため、指定すると過剰検証でコストと時間が増える</div>
+          </div>
+          <div class="field">
+            <div class="lab">禁止事項（自由記述）</div>
+            <input type="text" id="ban" placeholder="例：宣伝文句は使わない">
+          </div>
+        </div>
+      </details>
+    </div>
+
+    <!-- STEP 4 -->
+    <div class="card" data-step="4">
+      <div class="card-head">
+        <span class="badge">4</span><h2>文章を自然にする</h2>
+        <span class="hint">AIっぽい特徴をスイッチで除去</span>
+        <span style="flex:1"></span>
+        <button class="mini" id="cleanAll" onclick="toggleAllTraits()">まとめてON</button>
+      </div>
+      <div class="traits" id="traits"></div>
+    </div>
+
+  </div>
+
+  <!-- PREVIEW -->
+  <div class="preview">
+    <div class="pv-head">
+      <h3>生成されたプロンプト</h3>
+      <span class="cc" id="cc">0 文字</span>
+    </div>
+    <div class="tabs">
+      <div class="tab on" id="tabPretty" onclick="switchTab(true)">🎨 整形表示</div>
+      <div class="tab" id="tabRaw" onclick="switchTab(false)">📄 テキスト</div>
+    </div>
+    <div class="pv-body">
+      <div id="outPretty"></div>
+      <div id="outRaw"></div>
+    </div>
+    <div class="pv-actions">
+      <button class="act primary" onclick="copyOut()">📋 コピーして使う</button>
+      <button class="act ghost" onclick="resetAll()">リセット</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast">コピーしました</div>
+
+<script>
+/* ===== 選択肢 ===== */
+const OPTS = {
+  struct:  ["Markdown見出し","XMLタグ"],
+  format:  ["おまかせ","箇条書き","文章","見出し付き","表","手順ステップ","JSON"],
+  method:  ["順を追って考える","複数の案を出す","根拠を示す","反対意見も検討する","関連箇所を引用してから答える","徹底的に作り込む","スコープを広げない"],
+  stability:["結論から述べる","不明点は先に質問","フォーマット厳守","推測で断定しない","最後に自己チェック"]
+};
+
+/* ===== セクション → XMLタグ名 ===== */
+const XML_TAG = {
+  "役割":"role", "背景・前提":"context", "依頼":"instructions", "対象・内容":"input",
+  "対象読者":"audience", "出力条件":"output_format", "お手本の例":"examples",
+  "進め方":"process", "禁止事項":"constraints"
+};
+
+/* ===== トーン／分量：5段階 ===== */
+const TONE_LEVELS = [
+  {label:"端的",     text:"無駄を削ぎ、要点のみを言い切る文体で書く。装飾語や前置きは使わない"},
+  {label:"やや端的", text:"簡潔さを優先しつつ、理解に必要な補足だけを添える文体で書く"},
+  {label:"標準",     text:"自然で読みやすい、くだけすぎず堅すぎない文体で書く"},
+  {label:"丁寧",     text:"丁寧で礼儀正しく、読み手への配慮が伝わる文体で書く"},
+  {label:"フォーマル",text:"格式のあるフォーマルな文体で書く。敬語を正確に使う"}
+];
+const LENGTH_LEVELS = [
+  {label:"最小限", text:"100字程度。要点のみに絞る"},
+  {label:"短め",   text:"300字程度。核心を過不足なく伝える"},
+  {label:"標準",   text:"600字程度。主要な点を一通り押さえる"},
+  {label:"詳しめ", text:"1200字程度。具体例や補足も交えて掘り下げる"},
+  {label:"徹底的", text:"字数の上限なし。網羅的かつ深く掘り下げる"}
+];
+
+/* ===== AIっぽい文章の特徴 → 除去指示 =====
+   ※ 公式のプロンプト指針に沿い、rule は「してはいけないこと」ではなく
+      「すべきこと＋その理由」の肯定形で記述している（否定形より効きが良い） */
+const TRAITS = [
+  {k:"intro",  t:"定型的な前置き",  d:"「〜について解説します」",
+    rule:"一文目から本題の内容で始める。読み手が求めているのは中身であり、前置きや挨拶は読む時間を奪うだけなので書かない"},
+  {k:"closing",t:"締めの決まり文句", d:"「いかがでしたか」",
+    rule:"内容が終わったところで文章を終える。「いかがでしたか」「〜と言えるでしょう」のような締めは情報を追加しないため、まとめ文句や問いかけで終わらせない"},
+  {k:"vague",  t:"曖昧なぼかし表現", d:"「〜な側面があります」",
+    rule:"言い切れることは断定して書く。「〜な側面があります」「〜と考えられます」は読み手の判断材料にならないため、本当に不確かな点のみ、なぜ不確かなのかを添えて留保する"},
+  {k:"emphasis",t:"強調の多用",     d:"「非常に」「まさに」の連発",
+    rule:"重要さは内容そのもので伝える。強調副詞（非常に・とても・まさに）や太字を多用すると、どこが本当に重要なのか判別できなくなるため控える"},
+  {k:"bullet", t:"箇条書き頼み",    d:"何でも箇条書きにする",
+    rule:"説明は地の文でつなげて書き、箇条書きは並列な項目を列挙する場面に限る。箇条書きは情報を断片化し、論理のつながりが失われるため"},
+  {k:"template",t:"テンプレ構成",   d:"「まず/次に/最後に」の型",
+    rule:"内容の論理に沿って構成を決める。「まず〜次に〜最後に」の型は中身と無関係に形が決まってしまうため使わない"},
+  {k:"verbose",t:"冗長・過剰な丁寧さ", d:"回りくどい言い回し",
+    rule:"一文一義で、密度の高い文を書く。短くする方法は、読み手の判断を変えない情報を落とすことであり、言い換えの反復や回りくどい敬語は削る"},
+  {k:"emoji",  t:"絵文字・装飾記号", d:"✨や🚀の多用",
+    rule:"文章そのもので伝える。絵文字・顔文字・装飾記号は使わない"},
+  {k:"sontaku",t:"無駄な忖度",      d:"過剰な気遣い・遠慮がちな言い回し",
+    rule:"「恐れ入りますが」「もし可能であれば」「差し支えなければ」等のへりくだった前置きや、指摘・反論・悪い知らせを和らげるための遠回しな言い方をせず、言うべきことを率直に言い切る。相手の気分を害さないための忖度より、伝わることを優先する"}
+];
+
+/* ===== 用途プリセット =====
+   grp: basic=定番タスク / dev=開発ワークフロー
+   model: {tier: high|mid|low|any, name: 表示名, effort: 工数目安, why: 理由} */
+const PRESETS = {
+  summary:{ ico:"📝", nm:"要約", grp:"basic", role:"要点を的確に抽出する編集者",
+    model:{tier:"low", name:"Haiku / Sonnet", effort:"小", why:"仕様が明確な定型作業。速いモデルで十分な品質が出る"},
+    label:"要約したい文章を貼り付けてください",
+    task:"次の文章を要約してください。目的は、原文を読まなくても意思決定や理解に必要な情報が得られる状態にすることです。",
+    quality:["原文にない情報や解釈を付け足さない","固有名詞・数値・日付は省略せず正確に保持する","重要度の高い順に並べる"],
+    tone:0, length:0, format:"箇条書き", method:[], stability:["結論から述べる"] },
+
+  blog:{ ico:"✍️", nm:"文章作成", grp:"basic", role:"読み手を引き込むプロのライター",
+    model:{tier:"high", name:"Fable / Opus", effort:"大", why:"文章の質がそのまま成果物の価値になる。強いモデルの差が最も出る用途"},
+    label:"書いてほしいテーマ・条件を書いてください",
+    task:"以下のテーマで文章を書いてください。目的は、読者が最後まで読み、内容を自分ごととして受け取れる文章にすることです。",
+    quality:["導入の1〜2文で読者の関心を掴む","主張は一貫させ、根拠や具体例で支える","読者が次に取るべき行動や視点が明確になる"],
+    tone:3, length:3, format:"見出し付き", method:[], stability:["結論から述べる"] },
+
+  mail:{ ico:"✉️", nm:"メール作成", grp:"basic", role:"ビジネスマナーに精通したアシスタント",
+    model:{tier:"low", name:"Haiku / Sonnet", effort:"小", why:"型が決まっており、モデルによる差が出にくい"},
+    label:"送りたい用件・相手・状況を書いてください",
+    task:"次の用件をもとにビジネスメールを作成してください。件名も含めて出力してください。",
+    quality:["件名だけで用件が分かる","本文の冒頭数行で結論（依頼・報告内容）が伝わる","敬語は正確に、へりくだりすぎない","相手が返信で何をすればよいかが明確"],
+    tone:4, length:1, format:"文章", method:[], stability:["フォーマット厳守"] },
+
+  translate:{ ico:"🌐", nm:"翻訳", grp:"basic", role:"両言語の文化に精通したプロの翻訳者",
+    model:{tier:"mid", name:"Sonnet", effort:"中", why:"通常はSonnetで十分。文学的なニュアンス重視ならFableに切り替え"},
+    label:"翻訳したい文章を貼り付けてください",
+    task:"次の文章を翻訳してください。逐語訳ではなく、訳文だけを読んだ人が原文の読者と同じ理解と印象を得られる翻訳にしてください。",
+    quality:["意味の欠落・付け足しがない","直訳調を避け、訳文の言語として自然な表現にする","語調・ニュアンス（丁寧さ、ユーモア等）を保つ","訳しにくい語は訳注を添える"],
+    tone:2, length:2, format:"文章", method:[], stability:["推測で断定しない"] },
+
+  code:{ ico:"💻", nm:"コード", grp:"basic", role:"経験豊富なソフトウェアエンジニア",
+    model:{tier:"mid", name:"Sonnet / Opus", effort:"中", why:"通常はSonnet。複雑な設計判断が絡むならOpusに上げる"},
+    label:"やりたいこと・エラー・対象コードを書いてください",
+    task:"次の内容に対応するコードを書いてください。そのまま動かせる完全なコードと、判断が必要だった点の簡潔な説明を出力してください。",
+    quality:["省略なしで、そのまま実行・貼り付けできる状態にする","開いていないコードについて推測で答えない。参照されたファイルがある場合は必ず読んでから答える","要求されていない機能追加・リファクタ・抽象化をしない。起こり得ない事態への防御的なコードやフォールバックも足さず、検証は外部との境界（ユーザー入力・外部API）だけに置く","テストを通すための特殊対応やハードコードをせず、有効な入力すべてに対して正しく動く一般的な実装にする","エッジケース（空入力・エラー時）を考慮し、前提にした環境やバージョンを明記する"],
+    tone:1, length:2, format:"手順ステップ", method:["順を追って考える"], stability:["不明点は先に質問","推測で断定しない"] },
+
+  frontend:{ ico:"🎨", nm:"UI・デザイン", grp:"basic", role:"独自の美意識を持つフロントエンドデザイナー兼エンジニア",
+    model:{tier:"high", name:"Fable / Opus", effort:"中", why:"独自性の高いデザインは高性能モデルで差が出る。ありふれた見た目に寄りやすいので指示も効く"},
+    label:"作りたい画面・ブランド・雰囲気を書いてください",
+    task:"次の要件でフロントエンドを実装してください。目的は、ありふれた既製品のような見た目ではなく、この文脈のために設計されたと感じられる画面にすることです。",
+    quality:["いわゆる「AIが作った感じ」の美意識を避ける：使い古されたフォント（Inter・Roboto・Arial・システムフォント）、白や黒地に紫グラデーションの配色、予測どおりのレイアウトを使わない","配色は一つの方向性に決め切る（CSS変数で統一）。主となる色と鋭いアクセント色で構成し、無難に散らした配色にしない","フォントは文脈に合う個性のあるものを選び、書体で世界観を作る","背景は単色で済ませず、グラデーション・幾何パターン・文脈に合う効果で奥行きを作る","動きは要所に集中させる（読み込み時の段階的な表示など）。細かな動きを全体に散らさない","実装前に、方向性の異なる案を3〜4つ（背景色・アクセント色・書体・一行の狙い）提示し、どれを採用するか確認する"],
+    tone:2, length:3, format:"おまかせ", method:[], stability:[] },
+
+  idea:{ ico:"💡", nm:"アイデア出し", grp:"basic", role:"発想力に富んだブレストパートナー",
+    model:{tier:"high", name:"Fable / Opus", effort:"中", why:"発想の幅と意外性は高性能モデルが明確に強い"},
+    label:"考えたいテーマ・お題を書いてください",
+    task:"次のテーマについてアイデアを出してください。目的は選択肢を広げることなので、質より量と多様性を優先してください。",
+    quality:["切り口の異なる案を最低8個出す","無難な案だけでなく、意外性のある案を必ず混ぜる","各案に一言で「狙い」を添える","似た案を水増ししない"],
+    tone:1, length:2, format:"箇条書き", method:["複数の案を出す"], stability:[] },
+
+  proof:{ ico:"🔍", nm:"添削・校正", grp:"basic", role:"厳密で丁寧な校正者",
+    model:{tier:"mid", name:"Sonnet", effort:"中", why:"ルールベースの確認が中心。標準モデルで安定する"},
+    label:"添削してほしい文章を貼り付けてください",
+    task:"次の文章を校正・添削してください。誤りの指摘と修正版の両方を出力してください。",
+    quality:["誤字脱字→文法→表現→論理の順に段階的にチェックする","指摘には必ず理由を添える","元の文体や意図は変えず、必要な修正だけを行う","問題のない箇所を無理に直さない"],
+    tone:2, length:2, format:"見出し付き", method:["根拠を示す"], stability:["フォーマット厳守"] },
+
+  manual:{ ico:"📘", nm:"マニュアル作成", grp:"basic", role:"分かりやすい手順を設計するテクニカルライター",
+    model:{tier:"low", name:"Haiku / Sonnet", effort:"小", why:"整理と構成が中心の定型作業。速いモデルで十分な品質が出る"},
+    label:"マニュアル化したい作業内容・操作手順を書いてください",
+    task:"次の内容をもとに、初めて読む人でも迷わず作業・操作できるマニュアルを作成してください。",
+    quality:["手順は実行可能な粒度に分割し、1ステップに1つの操作だけを書く","作業を始める前に必要な前提条件・準備物をまとめて明記する","つまずきやすい箇所には注意点や、うまくいかない場合の対処を添える","専門用語は初出の箇所で簡潔に説明する","手順どおりに進めれば、実際の画面や状態を見なくても次に何をすべきか分かる順序・書き方にする"],
+    tone:2, length:2, format:"手順ステップ", method:[], stability:["フォーマット厳守"] },
+
+  rating:{ ico:"📊", nm:"評価・採点", grp:"basic", role:"客観的な評価基準を設計する評価者",
+    model:{tier:"mid", name:"Sonnet", effort:"中", why:"基準設計と採点の一貫性が中心。標準モデルで安定する"},
+    label:"評価してほしい内容を貼り付けてください",
+    task:"次の内容を評価してください。ただし採点にいきなり入らず、まず対象の性質に合った評価観点を5つ提案し、その観点で評価してよいかユーザーに確認してください。承認（または修正指示）を受け取ってから、確定した5観点で採点に進んでください。",
+    quality:["最初の応答では採点をせず、提案する5つの評価観点とそれぞれの選定理由だけを示し、ユーザーの確認を求めて止まる","5つの観点は互いに意味が重複せず、対象の性質に照らして独立した切り口にする","確認が取れたら、各観点を10点満点で採点し、その点数にした根拠を一言添える","5観点の合計・平均に加え、最も改善余地が大きい観点を1つ明示する"],
+    tone:1, length:2, format:"表", method:["根拠を示す"], stability:["不明点は先に質問","フォーマット厳守"] },
+
+  polish:{ ico:"✨", nm:"仕上げ", grp:"basic", role:"成果物を提出・公開できる水準まで引き上げる編集責任者",
+    model:{tier:"high", name:"Fable / Opus", effort:"中", why:"最終品質が成果物の印象を決める。最後の詰めは高性能モデルが明確に強い"},
+    label:"ほぼ完成した成果物と、気になっている点があれば貼り付けてください",
+    task:"次の、ほぼ完成した成果物を最終仕上げしてください。目的は、これ以上直す必要がない「そのまま提出・公開できる完成品」にすることです。ゼロから作り直すのではなく、完成度を上げる調整だけを行ってください。",
+    quality:["内容や構成を大きく作り変えず、完成度を上げる修正に限定する（作り直しではなく仕上げ）","誤字脱字・表記ゆれ・用語・トーンを全体で統一し、細部の粗をなくす","事実の矛盾・抜け漏れ・つながりの悪い箇所など、提出前に直すべき欠陥を洗い出して直す","仕上げた最終成果物を省略せず完全な形で出力し、そのあとに「直した点」と「あえて残した点（理由つき）」を一覧で添える"],
+    tone:2, length:2, format:"おまかせ", method:[], stability:["フォーマット厳守","最後に自己チェック"] },
+
+  mdlog:{ ico:"🗂️", nm:"作業まとめ", grp:"basic", role:"作業記録を構造化データとして整理するテクニカルライター",
+    model:{tier:"low", name:"Haiku / Sonnet", effort:"小", why:"要約と整形が中心の定型作業。速いモデルで十分な品質が出る"},
+    label:"まとめたい作業内容・会話ログ・変更点を貼り付けてください",
+    task:"次の作業内容を、人間が読めて、かつコンピューターが機械的にパースできるMarkdown文書として構造化してください。人間向けの自由な文章ではなく、後続処理（検索・突合・自動判定）でも一意に読み取れる、キーが固定された形式にすることが目的です。",
+    quality:["先頭にYAMLフロントマター（---で挟む）を置き、status: done|partial|blocked、inputs: [配列]、outputs: [配列] をキーとして持たせる","本文はMarkdown見出しで「## 作業概要」「## 使ったインプット」「## アウトプット一覧」「## 特記事項」の4つに固定し、この順序・表記を一字一句変えない","アウトプット一覧は各項目を「- `ファイル名` — 説明」の1行1形式に統一し、この形式以外の書き方をしない","フロントマターと本文の内容は矛盾させない（フロントマターのoutputsと本文のアウトプット一覧は同じファイル名を指す）","値は同じ意味なら常に同じ表記に正規化する（表記ゆれを許さない）。該当情報がなくてもキー・見出し自体は省略しない","時系列の経過ではなく、最終的な状態（何がどう変わったか）のみを記述する"],
+    tone:0, length:1, format:"見出し付き", method:[], stability:["フォーマット厳守"] },
+
+  free:{ ico:"⚙️", nm:"自由", grp:"basic", role:"",
+    model:{tier:"any", name:"内容による", effort:"−", why:"軽い作業はHaiku、判断の重い作業はFable / Opusを選ぶ"},
+    label:"AIにしてほしいことを自由に書いてください",
+    task:"", quality:[],
+    tone:2, length:2, format:"おまかせ", method:[], stability:[] },
+
+  /* ---- 開発ワークフロー：モデル使い分けの3工程 ---- */
+  design:{ ico:"🏗️", nm:"① 設計・構造", grp:"dev", role:"システム全体を見通せるソフトウェアアーキテクト",
+    model:{tier:"high", name:"Fable / Opus", effort:"大", why:"ここでの判断が全体の質を決める。やり直しが最も高くつく箇所"},
+    label:"作りたいもの・解決したい課題を書いてください",
+    task:"実装に入る前の設計を行ってください。目的は、あとからやり直しが高くつく判断をこの段階で正しく行うことです。コードは書かず、設計だけを出力してください。",
+    quality:["全体構成・データ構造・処理の流れを先に示す","重要な設計判断には選択肢を複数挙げ、採用する理由と捨てる理由を添える","あとから変更しにくい箇所（やり直しコストが高い判断）を明示する","実装コードは書かない（構成の説明と疑似コードまで）"],
+    tone:1, length:3, format:"見出し付き", method:["根拠を示す","反対意見も検討する"], stability:["不明点は先に質問"] },
+
+  build:{ ico:"🔁", nm:"② 実装・反復", grp:"dev", role:"仕様を正確に実装するエンジニア",
+    model:{tier:"low", name:"Haiku / Sonnet", effort:"小", why:"仕様が明確なら差が出にくい。速くて安いモデルで数をこなす"},
+    label:"実装してほしい仕様・修正内容を具体的に書いてください",
+    task:"次の仕様どおりに実装・修正してください。仕様は確定済みです。設計の変更や仕様の解釈の拡大はせず、書かれたとおりに作業してください。",
+    quality:["仕様に書かれたことだけを実装する（機能追加・リファクタを勝手にしない）","既存のコードのスタイル・構成に合わせる","変更した箇所を最後に簡潔に列挙する","仕様に曖昧さがあれば作業前に質問する"],
+    tone:0, length:1, format:"おまかせ", method:[], stability:["不明点は先に質問","フォーマット厳守"] },
+
+  review:{ ico:"🎯", nm:"③ 重点レビュー", grp:"dev", role:"経験豊富なレビュアー",
+    model:{tier:"high", name:"Fable / Opus", effort:"中", why:"範囲を絞ることで高性能モデルの注意力が最大化する"},
+    label:"レビュー対象（コードや文章）と、見てほしい観点を書いてください",
+    task:"次の対象を、指定した観点に絞って徹底的にレビューしてください。範囲を絞るのは見落としをなくすためです。この段階での目的は網羅性であり、重要度による取捨選択は行わないでください。",
+    quality:["指定された観点・範囲だけを深く見る（範囲外に広げない）","見つけた問題はすべて報告する。確信が持てないものや軽微に見えるものも省かない（本物のバグを黙って落とすほうが、後で除外される指摘を挙げるより損失が大きいため）","各指摘に「確信度」と「重大度」を明記し、あとから絞り込める形にする","各指摘に根拠と具体的な修正案を付け、重大度の高い順に並べる","純粋な好みの問題（命名やスタイルの趣味）だけは省いてよい。問題が本当にない場合は「問題なし」と明言する"],
+    tone:1, length:2, format:"見出し付き", method:["根拠を示す"], stability:["結論から述べる","推測で断定しない"] }
+};
+
+/* ===== 状態 ===== */
+let state = {
+  preset:"summary", tone:2, length:2, format:"おまかせ", struct:"Markdown見出し",
+  method:[], stability:[], traits:[], r80:false, longInput:false
+};
+
+/* ===== 長文入力モード トグル =====
+   長い素材は指示より前に置き、依頼は末尾に置くのが公式推奨 */
+function toggleLong(){
+  state.longInput=!state.longInput;
+  document.getElementById("longBox").classList.toggle("on",state.longInput);
+  generate();
+}
+
+/* ===== R80ルール トグル ===== */
+const R80_TEXT = "文章はすべて「R80（アールエイティ）」のルールで書く。\n"
+  +"・2文構成、合計80字以内（1文目40字ほど、2文目40字ほどが目安）\n"
+  +"・2文目の冒頭には必ず接続詞を置く。使う接続詞は次のいずれか一種類のみ：\n"
+  +"　順接（したがって／ゆえに／だから）、逆接（しかし／だが／ところが）、並列（また／ならびに／かつ）、対比（一方）、換言（つまり／すなわち）、説明（なぜなら）\n"
+  +"・構造は「1文目（前提・事実・主張）＋接続詞＋2文目（結論・理由・展開）」とする\n"
+  +"・複数のR80が必要な場合（例：序論・本論・結論）は、それぞれをR80単位で独立させ、全体をつなげる";
+function toggleR80(){
+  state.r80=!state.r80;
+  document.getElementById("r80Box").classList.toggle("on",state.r80);
+  generate();
+}
+
+/* ===== プリセット描画（定番／開発の2グループ） ===== */
+Object.entries(PRESETS).forEach(([key,p])=>{
+  const d = document.createElement("div");
+  d.className="preset"; d.dataset.key=key;
+  d.innerHTML=`<span class="chk">✓</span><span class="ico">${p.ico}</span><span class="nm">${p.nm}</span>`
+    +`<br><span class="mdl ${p.model.tier}">${p.model.name}</span>`;
+  d.onclick=()=>applyPreset(key);
+  document.getElementById(p.grp==="dev"?"presetsDev":"presetsBasic").appendChild(d);
+});
+
+/* ===== 推奨モデル表示 ===== */
+const TIER_ICO = {high:"🧠", mid:"⚖️", low:"⚡", any:"🔀"};
+/* effort（思考の深さ）の推奨値。公式ガイドの既定は high で、
+   難しい作業は xhigh、定型作業は low〜medium に下げるのが推奨 */
+const TIER_EFFORT = {high:"high〜xhigh", mid:"high", low:"low〜medium", any:"内容に応じて"};
+function syncModelStrip(p){
+  const s=document.getElementById("modelStrip");
+  s.dataset.tier=p.model.tier;
+  s.innerHTML=`<span class="m-ico">${TIER_ICO[p.model.tier]}</span>`
+    +`<span>推奨モデル：<b>${p.model.name}</b>（工数：${p.model.effort} ／ effort設定：${TIER_EFFORT[p.model.tier]}）`
+    +`<span class="m-why">${p.model.why}</span></span>`;
+}
+
+/* ===== セグメント描画 ===== */
+function buildSeg(key, multi){
+  const box=document.querySelector(`.seg[data-key="${key}"]`);
+  box.innerHTML="";
+  OPTS[key].forEach(v=>{
+    const o=document.createElement("div");
+    o.className="opt"; o.textContent=v;
+    o.onclick=()=>{
+      if(multi){ const i=state[key].indexOf(v); i>=0?state[key].splice(i,1):state[key].push(v); }
+      else state[key]=v;
+      syncSeg(key,multi); generate();
+    };
+    box.appendChild(o);
+  });
+}
+function syncSeg(key, multi){
+  document.querySelectorAll(`.seg[data-key="${key}"] .opt`).forEach(o=>{
+    const on = multi ? state[key].includes(o.textContent) : state[key]===o.textContent;
+    o.classList.toggle("on",on);
+  });
+}
+buildSeg("struct",false); buildSeg("format",false); buildSeg("method",true); buildSeg("stability",true);
+
+/* ===== スライダー（5段階・目盛りクリック対応） ===== */
+function buildTicks(elId, levels, key){
+  const box=document.getElementById(elId);
+  box.innerHTML="";
+  levels.forEach((l,i)=>{
+    const s=document.createElement("span");
+    s.textContent=l.label;
+    s.onclick=()=>{ state[key]=i; syncSliders(); generate(); };
+    box.appendChild(s);
+  });
+}
+buildTicks("toneTicks",TONE_LEVELS,"tone");
+buildTicks("lengthTicks",LENGTH_LEVELS,"length");
+
+document.getElementById("toneSlider").addEventListener("input",e=>{
+  state.tone=+e.target.value; syncSliders(); generate();
+});
+document.getElementById("lengthSlider").addEventListener("input",e=>{
+  state.length=+e.target.value; syncSliders(); generate();
+});
+function syncSliders(){
+  document.getElementById("toneSlider").value=state.tone;
+  document.getElementById("lengthSlider").value=state.length;
+  [...document.getElementById("toneTicks").children].forEach((s,i)=>s.classList.toggle("on",i===state.tone));
+  [...document.getElementById("lengthTicks").children].forEach((s,i)=>s.classList.toggle("on",i===state.length));
+}
+
+/* ===== AIっぽさ特徴（スイッチ） ===== */
+const traitsEl=document.getElementById("traits");
+TRAITS.forEach(tr=>{
+  const row=document.createElement("div");
+  row.className="trait"; row.dataset.k=tr.k;
+  row.innerHTML=`<div class="sw"></div><div class="tx"><b>${tr.t}</b><span>${tr.d}</span></div>`;
+  row.onclick=()=>{
+    const i=state.traits.indexOf(tr.k);
+    i>=0?state.traits.splice(i,1):state.traits.push(tr.k);
+    syncTraits(); generate();
+  };
+  traitsEl.appendChild(row);
+});
+function syncTraits(){
+  document.querySelectorAll(".trait").forEach(r=>r.classList.toggle("on",state.traits.includes(r.dataset.k)));
+  document.getElementById("cleanAll").textContent =
+    state.traits.length===TRAITS.length ? "すべて解除" : "まとめてON";
+}
+function toggleAllTraits(){
+  state.traits = state.traits.length===TRAITS.length ? [] : TRAITS.map(t=>t.k);
+  syncTraits(); generate();
+}
+
+/* ===== プリセット適用 ===== */
+function applyPreset(key){
+  const p=PRESETS[key];
+  state.preset=key; state.tone=p.tone; state.length=p.length; state.format=p.format;
+  state.method=[...p.method]; state.stability=[...p.stability];
+  document.getElementById("role").value=p.role;
+  document.getElementById("contentLabel").textContent=p.label;
+  document.querySelectorAll(".preset").forEach(el=>el.classList.toggle("active",el.dataset.key===key));
+  syncSeg("struct",false); syncSeg("format",false); syncSeg("method",true); syncSeg("stability",true);
+  syncSliders();
+  syncModelStrip(p);
+  generate();
+}
+
+/* ===== 入力連動 ===== */
+["content","role","context","audience","example","ban"].forEach(id=>{
+  document.getElementById(id).addEventListener("input",generate);
+});
+
+/* ===== プロンプト生成 =====
+   sections: {t: 見出し, tag: XMLタグ名, b: 本文, bx: XML時の本文, c: 色(1〜4=ステップ, 0=グレー)} */
+function buildSections(){
+  const p=PRESETS[state.preset];
+  const v=id=>document.getElementById(id).value.trim();
+  const content=v("content"), role=v("role"), context=v("context"),
+        audience=v("audience"), example=v("example"), ban=v("ban");
+  const pre=[], post=[];
+
+  if(role) pre.push({t:"役割", tag:"role", c:3,
+    b:`あなたは${role}です。その専門家として判断し、平均的な回答ではなく専門家水準の成果物を出してください。`});
+
+  if(context) pre.push({t:"背景・前提", tag:"context", c:3, b:context});
+
+  const askSec={t:"依頼", tag:"instructions", c:1, b:(p.task || "以下について対応してください。")};
+
+  const body = content || "（ここに内容を貼り付けてください）";
+  const inputSec={t:"対象・内容", tag:"input", c:2,
+    b:`"""\n${body}\n"""`, bx:body};
+
+  if(state.r80) post.push({t:"R80ルール（必須・最優先で守る）", tag:"r80_rule", c:1, b:R80_TEXT});
+
+  if(audience) post.push({t:"対象読者", tag:"audience", c:3,
+    b:`${audience}。この読者の知識レベルに合わせ、伝わらない専門用語には説明を添えてください。`});
+
+  const cond=[
+    `- 文体：${TONE_LEVELS[state.tone].text}`,
+    `- 分量：${LENGTH_LEVELS[state.length].text}`
+  ];
+  if(state.format!=="おまかせ") cond.push(`- 形式：${formatText(state.format)}`);
+  post.push({t:"出力条件", tag:"output_format", c:3, b:cond.join("\n")});
+
+  if(example) post.push({t:"お手本の例", tag:"examples", c:3,
+    b:`次の例の形式・トーンに厳密に合わせてください。\n"""\n${example}\n"""`,
+    bx:`次の例の形式・トーンに厳密に合わせてください。\n<example>\n${example}\n</example>`});
+
+  const proc=[];
+  state.method.forEach(m=>proc.push("- "+methodText(m)));
+  state.stability.forEach(s=>proc.push("- "+stabilityText(s)));
+  if(proc.length) post.push({t:"進め方", tag:"process", c:3, b:proc.join("\n")});
+
+  if(p.quality.length) post.push({t:"品質基準（すべて満たすこと）", tag:"quality_criteria", c:1,
+    b:p.quality.map(q=>"- "+q).join("\n")});
+
+  if(state.traits.length){
+    const rules=TRAITS.filter(t=>state.traits.includes(t.k)).map(t=>"- "+t.rule);
+    post.push({t:"文体（人間が書いた自然な文章にするため）", tag:"writing_style", c:4, b:rules.join("\n")});
+  }
+
+  if(ban) post.push({t:"禁止事項", tag:"constraints", c:3, b:"- "+ban});
+
+  /* 長文入力モードでは素材を先頭・依頼を末尾に置く（公式推奨の並び） */
+  const secs = state.longInput
+    ? [inputSec, ...pre, ...post, askSec]
+    : [...pre, askSec, inputSec, ...post];
+
+  /* 最終指示：高性能モデル向けでは自己検証を指示しない（指示しなくても検証するため、
+     書くと過剰検証になり時間とコストだけ増える。公式ガイドの指摘に沿った分岐） */
+  const fin = p.model.tier==="high"
+    ? "前置きの説明は不要です。成果物から出力を始めてください。"
+    : "出力前に、上記の依頼・出力条件"+(p.quality.length?"・品質基準":"")+"をすべて満たしているか確認してください。前置きの説明は不要です。成果物から出力を始めてください。";
+  secs.push({t:"", c:0, final:true, b:"---\n"+fin});
+
+  return secs;
+}
+
+function generate(){
+  const secs=buildSections();
+  const xml = state.struct==="XMLタグ";
+
+  /* raw テキスト */
+  const raw=secs.map(s=>{
+    if(s.final) return s.b;
+    const b = (xml && s.bx) ? s.bx : s.b;
+    return xml ? `<${s.tag}>\n${b}\n</${s.tag}>` : `# ${s.t}\n${b}`;
+  }).join("\n\n");
+  document.getElementById("outRaw").textContent=raw;
+  document.getElementById("cc").textContent=raw.length+" 文字";
+
+  /* 整形ビュー */
+  const pretty=document.getElementById("outPretty");
+  pretty.innerHTML="";
+  secs.forEach(s=>{
+    const d=document.createElement("div");
+    d.className="sec"+(s.final?" final":"");
+    d.dataset.c=s.c;
+    if(!s.final){
+      const t=document.createElement("div"); t.className="sec-t";
+      t.textContent = xml ? `<${s.tag}>` : s.t;
+      d.appendChild(t);
+    }
+    const b=document.createElement("div"); b.className="sec-b";
+    b.textContent = s.final ? s.b.replace(/^---\n/,"") : ((xml && s.bx) ? s.bx : s.b);
+    d.appendChild(b);
+    pretty.appendChild(d);
+  });
+}
+
+function formatText(v){
+  return {
+    "箇条書き":"箇条書き。1項目1内容で簡潔に",
+    "文章":"見出しや箇条書きを使わない、つながりのある文章",
+    "見出し付き":"見出しで区切った構成（Markdown）",
+    "表":"表形式（Markdownの表）。列の名前を適切に設計する",
+    "手順ステップ":"番号付きの手順。各ステップは実行可能な粒度にする",
+    "JSON":"有効なJSONのみを出力する（コードブロックや説明文は不要）"
+  }[v]||v;
+}
+function methodText(v){
+  return {
+    "順を追って考える":"結論を出す前に、前提の整理→検討→結論の順で段階的に考える",
+    "複数の案を出す":"単一の答えではなく複数の選択肢を示し、それぞれの長所・短所を添える",
+    "根拠を示す":"すべての主張に、理由・根拠・出典のいずれかを添える",
+    "反対意見も検討する":"自分の結論への最も強い反論を挙げ、それに答えてから結論を出す",
+    "関連箇所を引用してから答える":"回答の前に、対象の中から関連する箇所を引用して示し、その引用にもとづいて答える（長い資料では該当箇所に集中できるため）",
+    "徹底的に作り込む":"基本的な対応にとどまらず、関連する要素を可能な限り盛り込んで、完成度の高い成果物にする",
+    "スコープを広げない":"依頼された範囲の作業を完遂し、それを超える改善・追加・作り替えはしない。より良い方法があると思う場合は、一文で指摘してから依頼どおりに進める"
+  }[v]||v;
+}
+function stabilityText(v){
+  return {
+    "結論から述べる":"最初の1〜2文で結論・要点を述べ、そのあとで詳細を説明する",
+    "不明点は先に質問":"依頼内容に不明点・複数の解釈がある場合は、作業せず先に質問だけを返す",
+    "フォーマット厳守":"指定した出力形式を毎回一字一句同じ構造で守る（項目の追加・省略をしない）",
+    "推測で断定しない":"事実として確認できない点は推測で断定せず、「不明」または推測である旨を明記する",
+    "最後に自己チェック":"出力の最後に、指示をすべて満たしたかのセルフチェック結果を1行で添える"
+  }[v]||v;
+}
+
+/* ===== タブ切替 ===== */
+function switchTab(pretty){
+  document.getElementById("tabPretty").classList.toggle("on",pretty);
+  document.getElementById("tabRaw").classList.toggle("on",!pretty);
+  document.getElementById("outPretty").style.display=pretty?"block":"none";
+  document.getElementById("outRaw").style.display=pretty?"none":"block";
+}
+
+/* ===== コピー／リセット ===== */
+function copyOut(){
+  const t=document.getElementById("outRaw").textContent;
+  navigator.clipboard.writeText(t).then(showToast,()=>{
+    const ta=document.createElement("textarea"); ta.value=t; document.body.appendChild(ta);
+    ta.select(); document.execCommand("copy"); ta.remove(); showToast();
+  });
+}
+function showToast(){ const t=document.getElementById("toast"); t.classList.add("show"); setTimeout(()=>t.classList.remove("show"),1500); }
+function resetAll(){
+  ["content","context","audience","example","ban"].forEach(id=>document.getElementById(id).value="");
+  state.traits=[]; syncTraits();
+  state.r80=false; document.getElementById("r80Box").classList.remove("on");
+  state.longInput=false; document.getElementById("longBox").classList.remove("on");
+  state.struct="Markdown見出し";
+  applyPreset("summary");
+}
+
+/* 初期化 */
+applyPreset("summary");
+syncTraits();
+</script>
+</body>
+</html>
