@@ -1,0 +1,14 @@
+[
+  {
+    "date": "2026-07-23",
+    "verb": "redesign",
+    "genre": "modern-minimal",
+    "macrostructure": "Component Playground",
+    "theme": "Cobalt",
+    "theme_axes": "cool-light paper / grotesk-sans display / electric-cobalt accent",
+    "nav": "N9 edge-aligned minimal",
+    "footer": "Ft2 inline single line",
+    "enrichment": "none (typography only)",
+    "brief": "プロンプト定型文ビルダー · 16の用途プリセットからAI向けプロンプトを組み立てる単一ページの道具"
+  }
+]
