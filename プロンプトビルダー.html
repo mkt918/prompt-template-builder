@@ -346,7 +346,9 @@ input[type=range]::-moz-range-thumb{
   font-size:var(--text-sm); color:var(--color-ink);
 }
 .switch .tx span{display:block; font-size:var(--text-xs); color:var(--color-ink-3); line-height:1.6;}
-.switch.on .tx b, .switch.on .tx span{text-decoration:line-through; color:var(--color-ink-3);}
+/* 04の特徴スイッチだけはON＝「その特徴を打ち消す」意味なので取り消し線で見せる。
+   03の長文入力/R80/Hallmarkは「その動作を有効にする」スイッチなので取り消し線は付けない */
+#traits .switch.on .tx b, #traits .switch.on .tx span{text-decoration:line-through; color:var(--color-ink-3);}
 
 .traits{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 var(--space-lg); }
 @media (max-width:720px){ .traits{grid-template-columns:minmax(0,1fr);} }
@@ -582,9 +584,14 @@ details[open] summary::before{content:"− ";}
           <div class="tx"><b>長文入力モード</b><span>長い資料を貼るとき用。素材を先頭・依頼を末尾に置き、先に関連箇所を引用させる（公式テストで最大30%向上：複雑な複数資料の場合）</span></div>
         </div>
 
-        <div class="switch" id="r80Box" onclick="toggleR80()" role="switch" tabindex="0" aria-checked="false" style="margin-bottom:var(--space-md)">
+        <div class="switch" id="r80Box" onclick="toggleR80()" role="switch" tabindex="0" aria-checked="false">
           <div class="sw"></div>
           <div class="tx"><b>R80ルールを適用</b><span>2文構成・80字以内、2文目の先頭は指定の接続詞（順接・逆接・並列・対比・換言・説明）で始める</span></div>
+        </div>
+
+        <div class="switch" id="hallmarkBox" onclick="toggleHallmark()" role="switch" tabindex="0" aria-checked="false" style="margin-bottom:var(--space-md)">
+          <div class="sw"></div>
+          <div class="tx"><b>Hallmark デザインを使用</b><span>modern-minimal / Cobalt スタイルの「AIっぽくない」デザイン美学を明示的に指示</span></div>
         </div>
 
         <div class="field">
@@ -790,14 +797,14 @@ const PRESETS = {
     label:"書いてほしいテーマ・条件を書いてください",
     task:"以下のテーマで文章を書いてください。目的は、読者が最後まで読み、内容を自分ごととして受け取れる文章にすることです。",
     quality:["導入の1〜2文で読者の関心を掴む","主張は一貫させ、根拠や具体例で支える","読者が次に取るべき行動や視点が明確になる"],
-    tone:3, length:3, format:"見出し付き", method:[], stability:["結論から述べる"] },
+    tone:3, length:3, format:"見出し付き", method:[], stability:["結論から述べる"], traitsAll:true },
 
   mail:{ ico:"✉️", nm:"メール作成", grp:"basic", role:"ビジネスマナーに精通したアシスタント",
     model:{tier:"low", name:"Haiku / Sonnet", effort:"小", why:"型が決まっており、モデルによる差が出にくい"},
     label:"送りたい用件・相手・状況を書いてください",
     task:"次の用件をもとにビジネスメールを作成してください。件名も含めて出力してください。",
     quality:["件名だけで用件が分かる","本文の冒頭数行で結論（依頼・報告内容）が伝わる","敬語は正確に、へりくだりすぎない","相手が返信で何をすればよいかが明確"],
-    tone:4, length:1, format:"文章", method:[], stability:["フォーマット厳守"] },
+    tone:4, length:1, format:"文章", method:[], stability:["フォーマット厳守"], traitsAll:true },
 
   translate:{ ico:"🌐", nm:"翻訳", grp:"basic", role:"両言語の文化に精通したプロの翻訳者",
     model:{tier:"mid", name:"Sonnet", effort:"中", why:"通常はSonnetで十分。文学的なニュアンス重視ならFableに切り替え"},
@@ -894,7 +901,7 @@ const PRESETS = {
 /* ===== 状態 ===== */
 let state = {
   preset:"summary", tone:2, length:2, format:"おまかせ", struct:"Markdown見出し",
-  method:[], stability:[], traits:[], r80:false, longInput:false
+  method:[], stability:[], traits:[], r80:false, longInput:false, hallmark:false
 };
 
 /* ===== 長文入力モード トグル =====
@@ -921,8 +928,25 @@ function toggleR80(){
   el.setAttribute("aria-checked", state.r80?"true":"false");
   generate();
 }
+
+/* ===== Hallmark デザイン トグル ===== */
+const HALLMARK_TEXT = "デザイン・実装は「Hallmark」の美意識で行う。\n"
+  +"・配色は一つの方向性に決め切る。無難に散らさず、主となる色と鋭いアクセント色で構成する（白/黒地への紫グラデーションは使わない）\n"
+  +"・フォントは文脈に合う個性のあるものを選ぶ。Inter・Roboto・Arial・システムフォント任せにしない\n"
+  +"・背景は単色で済ませず、グラデーション・幾何パターン・質感などで奥行きを作る\n"
+  +"・レイアウトは予測どおりの定型構成（tag-left/header-rightの並びなど）を避け、この文脈のために設計されたと感じさせる構成にする\n"
+  +"・動きは要所に集中させ、細かな演出を全体にばら撒かない\n"
+  +"・出力前に、この案が「いかにもAIが作った」凡庸な見た目になっていないか自己点検する";
+function toggleHallmark(){
+  state.hallmark=!state.hallmark;
+  const el=document.getElementById("hallmarkBox");
+  el.classList.toggle("on",state.hallmark);
+  el.setAttribute("aria-checked", state.hallmark?"true":"false");
+  generate();
+}
+
 /* キーボードでもモードスイッチを操作できるようにする */
-["longBox","r80Box"].forEach(id=>{
+["longBox","r80Box","hallmarkBox"].forEach(id=>{
   document.getElementById(id).addEventListener("keydown",e=>{
     if(e.key===" "||e.key==="Enter"){ e.preventDefault(); e.currentTarget.click(); }
   });
@@ -1051,6 +1075,11 @@ function applyPreset(key){
      公式：Fable 5 / Opus 5 は指示なしでも自己検証するため、書くと過剰検証になる。
      分岐をここ1か所に集約し、既定値と最終指示の食い違いを防ぐ */
   state.stability=p.stability.filter(s=>!(p.model.tier==="high" && s==="最後に自己チェック"));
+  /* メール・文章作成のように成果物がそのまま人が読む完成文になる用途は、
+     AIっぽさ除去（04）を基本すべてONにする。コードやアイデア出しなど
+     成果物の性質上ONが不要な用途では毎回OFFに戻す */
+  state.traits = p.traitsAll ? TRAITS.map(t=>t.k) : [];
+  syncTraits();
   document.getElementById("role").value=p.role;
   document.getElementById("contentLabel").textContent=p.label;
   document.querySelectorAll(".preset").forEach(el=>el.setAttribute("aria-pressed", el.dataset.key===key ? "true":"false"));
@@ -1099,6 +1128,8 @@ function buildSections(){
     b:`"""\n${body}\n"""`, bx:body};
 
   if(state.r80) post.push({t:"R80ルール", tag:"r80_rule", c:1, b:R80_TEXT});
+
+  if(state.hallmark) post.push({t:"デザイン方針（Hallmark）", tag:"design_style", c:1, b:HALLMARK_TEXT});
 
   if(audience) post.push({t:"対象読者", tag:"audience", c:3,
     b:`${audience}。この読者の知識レベルに合わせ、伝わらない専門用語には説明を添えてください。`});
@@ -1264,6 +1295,7 @@ function resetAll(){
   state.traits=[]; syncTraits();
   state.r80=false; document.getElementById("r80Box").classList.remove("on");
   state.longInput=false; document.getElementById("longBox").classList.remove("on");
+  state.hallmark=false; document.getElementById("hallmarkBox").classList.remove("on");
   state.struct="Markdown見出し";
   applyPreset("summary");
 }
