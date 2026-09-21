@@ -420,6 +420,7 @@ details[open] summary::before{content:"− ";}
   padding:var(--space-sm) var(--space-xs);
 }
 #outRaw{
+  display:none;  /* 初期は「構造」タブ。切替は switchTab() が inline で上書きする */
   white-space:pre-wrap; overflow-wrap:anywhere;
   font-family:var(--font-mono); font-size:var(--text-xs); line-height:1.85;
   color:var(--color-graphite-ink);
@@ -1411,13 +1412,19 @@ let state = {
   method:[], stability:[], traits:[], r80:false, longInput:false, hallmark:false
 };
 
+/* スイッチの見た目と aria-checked を必ず同時に更新する。
+   以前は各トグルと resetAll が別々に書いていて、resetAll だけ aria を落としていた */
+function setSwitch(id, on){
+  const el=document.getElementById(id);
+  el.classList.toggle("on", on);
+  el.setAttribute("aria-checked", on?"true":"false");
+}
+
 /* ===== 長文入力モード トグル =====
    長い素材は指示より前に置き、依頼は末尾に置くのが公式推奨 */
 function toggleLong(){
   state.longInput=!state.longInput;
-  const el=document.getElementById("longBox");
-  el.classList.toggle("on",state.longInput);
-  el.setAttribute("aria-checked", state.longInput?"true":"false");
+  setSwitch("longBox", state.longInput);
   generate();
 }
 
@@ -1430,9 +1437,7 @@ const R80_TEXT = "文章はすべて「R80（アールエイティ）」のル�
   +"・複数のR80が必要な場合（例：序論・本論・結論）は、それぞれをR80単位で独立させ、全体をつなげる";
 function toggleR80(){
   state.r80=!state.r80;
-  const el=document.getElementById("r80Box");
-  el.classList.toggle("on",state.r80);
-  el.setAttribute("aria-checked", state.r80?"true":"false");
+  setSwitch("r80Box", state.r80);
   generate();
 }
 
@@ -1445,9 +1450,7 @@ const HALLMARK_TEXT = "デザイン・実装は「Hallmark」の美意識で行�
   +"・動きは要所（読み込み時の段階的な表示など）に集中させ、細かな演出を全体にばら撒かない";
 function toggleHallmark(){
   state.hallmark=!state.hallmark;
-  const el=document.getElementById("hallmarkBox");
-  el.classList.toggle("on",state.hallmark);
-  el.setAttribute("aria-checked", state.hallmark?"true":"false");
+  setSwitch("hallmarkBox", state.hallmark);
   generate();
 }
 
@@ -1507,6 +1510,8 @@ function buildSeg(key, multi){
   OPTS[key].forEach(v=>{
     const o=document.createElement("div");
     o.className="opt"; o.textContent=v;
+    o.tabIndex=0; o.setAttribute("role","button");
+    o.onkeydown=e=>{ if(e.key===" "||e.key==="Enter"){ e.preventDefault(); o.onclick(); } };
     o.onclick=()=>{
       if(multi){ const i=state[key].indexOf(v); i>=0?state[key].splice(i,1):state[key].push(v); }
       else state[key]=v;
@@ -1518,7 +1523,7 @@ function buildSeg(key, multi){
 function syncSeg(key, multi){
   document.querySelectorAll(`.seg[data-key="${key}"] .opt`).forEach(o=>{
     const on = multi ? state[key].includes(o.textContent) : state[key]===o.textContent;
-    o.classList.toggle("on",on);
+    o.classList.toggle("on",on); o.setAttribute("aria-pressed", on?"true":"false");
   });
 }
 buildSeg("struct",false); buildSeg("format",false); buildSeg("method",true); buildSeg("stability",true);
@@ -1573,16 +1578,31 @@ TRAITS.forEach(tr=>{
   row.onkeydown=e=>{ if(e.key===" "||e.key==="Enter"){ e.preventDefault(); toggle(); } };
   traitsEl.appendChild(row);
 });
+/* プリセットが既定でONにする特徴。traitsAll のときは全項目から traitsExclude を除いたもの */
+function presetTraits(p){
+  return p.traitsAll ? TRAITS.map(t=>t.k).filter(k=>!(p.traitsExclude||[]).includes(k)) : [];
+}
+const sameSet=(a,b)=>a.length===b.length && a.every(k=>b.includes(k));
 function syncTraits(){
   document.querySelectorAll("#traits .switch").forEach(r=>{
     const on=state.traits.includes(r.dataset.k);
     r.classList.toggle("on",on); r.setAttribute("aria-checked", on?"true":"false");
   });
+  const all=TRAITS.map(t=>t.k), def=presetTraits(PRESETS[state.preset]);
+  const partial = def.length>0 && def.length<all.length;
   document.getElementById("cleanAll").textContent =
-    state.traits.length===TRAITS.length ? "すべて解除" : "まとめてON";
+    sameSet(state.traits, all) ? "すべて解除"
+    : (state.traits.length===0 && partial) ? "既定に戻す"
+    : "まとめてON";
 }
+/* 既定 → 全ON → 全OFF → 既定 の順に回す。mail のように既定が一部除外のプリセットで、
+   「全部 or ゼロ」しか選べず既定に戻れなかったのを直した */
 function toggleAllTraits(){
-  state.traits = state.traits.length===TRAITS.length ? [] : TRAITS.map(t=>t.k);
+  const all=TRAITS.map(t=>t.k), def=presetTraits(PRESETS[state.preset]);
+  const partial = def.length>0 && def.length<all.length;
+  if(sameSet(state.traits, all)) state.traits=[];
+  else if(state.traits.length===0 && partial) state.traits=[...def];
+  else state.traits=[...all];
   syncTraits(); generate();
 }
 
@@ -1600,13 +1620,11 @@ function applyPreset(key){
      成果物の性質上ONが不要な用途では毎回OFFに戻す */
   /* traitsExclude：ビジネスメールのようにクッション言葉が作法である用途では、
      「無駄な忖度」「冗長・過剰な丁寧さ」を外さないと文体がそっけなくなる */
-  state.traits = p.traitsAll ? TRAITS.map(t=>t.k).filter(k=>!(p.traitsExclude||[]).includes(k)) : [];
+  state.traits = presetTraits(p);
   /* Hallmark はデザイン原則の唯一の置き場。frontend では既定ON、他の用途では OFF に戻す
      （frontend 側に同じ原則を重ねて持たない） */
   state.hallmark = !!p.hallmarkDefault;
-  const hb=document.getElementById("hallmarkBox");
-  hb.classList.toggle("on", state.hallmark);
-  hb.setAttribute("aria-checked", state.hallmark?"true":"false");
+  setSwitch("hallmarkBox", state.hallmark);
   syncTraits();
   document.getElementById("role").value=p.role;
   document.getElementById("contentLabel").textContent=p.label;
@@ -1814,12 +1832,17 @@ function switchTab(pretty){
 /* ===== コピー／リセット ===== */
 function copyOut(){
   const t=document.getElementById("outRaw").textContent;
-  /* 未入力のままだとテンプレート変数がそのままAIに渡るため、コピー時に知らせる */
-  const empty = !document.getElementById("content").value.trim();
-  navigator.clipboard.writeText(t).then(()=>showToast(empty),()=>{
+  /* 未入力のままだとテンプレート変数がそのままAIに渡るため、コピー時に知らせる。
+     raw プリセットは内容欄を使わず {{…}} も無いので対象外 */
+  const empty = !PRESETS[state.preset].raw && !document.getElementById("content").value.trim();
+  const fallback=()=>{
     const ta=document.createElement("textarea"); ta.value=t; document.body.appendChild(ta);
     ta.select(); document.execCommand("copy"); ta.remove(); showToast(empty);
-  });
+  };
+  /* 非セキュア文脈では navigator.clipboard 自体が無く同期例外になるため、先に判定する */
+  if(navigator.clipboard && navigator.clipboard.writeText)
+    navigator.clipboard.writeText(t).then(()=>showToast(empty), fallback);
+  else fallback();
 }
 function showToast(empty){
   const t=document.getElementById("toast");
@@ -1831,9 +1854,9 @@ function showToast(empty){
 function resetAll(){
   ["content","context","audience","example","ban"].forEach(id=>document.getElementById(id).value="");
   state.traits=[]; syncTraits();
-  state.r80=false; document.getElementById("r80Box").classList.remove("on");
-  state.longInput=false; document.getElementById("longBox").classList.remove("on");
-  state.hallmark=false; document.getElementById("hallmarkBox").classList.remove("on");
+  state.r80=false; setSwitch("r80Box", false);
+  state.longInput=false; setSwitch("longBox", false);
+  /* hallmark は applyPreset がプリセット既定で再設定する */
   state.struct="Markdown見出し";
   applyPreset("summary");
 }
@@ -1896,8 +1919,8 @@ document.addEventListener("keydown",e=>{
 });
 
 /* 初期化 */
+if(!/Mac|iPhone|iPad/.test(navigator.platform||"")) document.querySelector("#cmdkOpen kbd").textContent="Ctrl+K";
 applyPreset("summary");
-syncTraits();
 </script>
 </body>
 </html>
