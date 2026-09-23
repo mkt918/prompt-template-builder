@@ -199,6 +199,11 @@ a{color:inherit;}
 .presets{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:var(--space-2xs); }
 @media (max-width:900px){ .presets{grid-template-columns:repeat(3,minmax(0,1fr));} }
 @media (max-width:560px){ .presets{grid-template-columns:repeat(2,minmax(0,1fr));} }
+/* Webアプリ開発は Opus 版（①②③）の真下に Sonnet 版（②S③S）を並べるため3列固定。
+   ②S を2列目から始めると ③S は自動で3列目に入る */
+#presetsDev{grid-template-columns:repeat(3,minmax(0,1fr));}
+#presetsDev .preset[data-key="buildS"]{grid-column:2;}
+@media (max-width:560px){ #presetsDev{grid-template-columns:repeat(2,minmax(0,1fr));} #presetsDev .preset[data-key="buildS"]{grid-column:auto;} }
 
 .preset{
   position:relative; display:flex; flex-direction:column; gap:var(--space-3xs);
