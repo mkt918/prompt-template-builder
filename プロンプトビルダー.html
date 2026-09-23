@@ -322,15 +322,15 @@ input[type=range]::-moz-range-thumb{
   width:14px; height:14px; background:var(--color-accent);
   border:2px solid var(--color-paper); border-radius:50%; cursor:grab;
 }
-.ticks{ display:flex; justify-content:space-between; gap:var(--space-3xs); margin-top:var(--space-3xs); }
+/* position:absolute で各ラベルを 0/25/50/75/100% の実座標に置く。
+   5等分のflexで中心寄せすると、中間ラベルの中心が実際のつまみ停止位置
+   （0,25,50,75,100%）からずれる（例：2番目のセル中心は30%になる） */
+.ticks{ position:relative; height:1.3em; margin-top:var(--space-3xs); }
 .ticks span{
-  flex:1 1 0; min-width:0; text-align:center; cursor:pointer;
+  position:absolute; top:0; white-space:nowrap; cursor:pointer;
   font-family:var(--font-mono); font-size:var(--text-2xs); color:var(--color-ink-3);
-  overflow-wrap:anywhere;
   transition:color var(--dur-fast) var(--ease-out);
 }
-.ticks span:first-child{text-align:left;}
-.ticks span:last-child{text-align:right;}
 .ticks span:hover{color:var(--color-ink-2);}
 .ticks span.on{color:var(--color-accent-2); font-weight:500;}
 
@@ -1540,6 +1540,11 @@ function buildTicks(elId, levels, key){
   levels.forEach((l,i)=>{
     const s=document.createElement("span");
     s.textContent=l.label;
+    /* つまみの実際の停止位置 i/(levels.length-1) に合わせて配置。
+       両端は枠外にはみ出さないよう左端/右端基準、中間は中心基準 */
+    const pct = i/(levels.length-1)*100;
+    s.style.left = pct+"%";
+    s.style.transform = i===0 ? "none" : i===levels.length-1 ? "translateX(-100%)" : "translateX(-50%)";
     s.onclick=()=>{ state[key]=i; syncSliders(); generate(); };
     box.appendChild(s);
   });
