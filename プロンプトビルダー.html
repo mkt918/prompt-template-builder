@@ -240,6 +240,8 @@ a{color:inherit;}
   font-family:var(--font-mono); font-size:var(--text-2xs); letter-spacing:0.06em;
   text-transform:uppercase; color:var(--color-accent-2); display:block; margin-bottom:2px;
 }
+.model-strip .m-copy{display:inline-block; margin-top:6px; padding:2px 10px; font:inherit; font-size:var(--text-xs); color:var(--color-ink-2); background:transparent; border:1px solid var(--color-rule); border-radius:6px; cursor:pointer;}
+.model-strip .m-copy:hover{color:var(--color-ink); border-color:var(--color-ink-3);}
 .model-strip .m-why{display:block; color:var(--color-ink-3); font-size:var(--text-xs); margin-top:2px;}
 
 /* raw プリセット（テンプレートを丸ごと出すもの）用。02〜04の調整が効かないことを示す */
@@ -2152,7 +2154,16 @@ function syncModelStrip(p){
   const eff = p.model.apiEffort || TIER_EFFORT[p.model.tier];
   line.append(b, document.createTextNode(`　工数 ${p.model.effort}　effort ${eff}`));
   const why=document.createElement("span"); why.className="m-why"; why.textContent=p.model.why;
-  s.append(tier, line, why);
+  s.append(tier, line);
+  /* 「xhigh→medium」「high〜xhigh」のような表記は、先頭の段階を /effort のコピー対象にする */
+  const lv=(eff.match(/low|medium|xhigh|high|max/)||[])[0];
+  if(lv){
+    const cb=document.createElement("button"); cb.type="button"; cb.className="m-copy";
+    cb.textContent=`/effort ${lv} をコピー`;
+    cb.onclick=()=>copyText(`/effort ${lv}`, ()=>{ cb.textContent="コピーしました"; setTimeout(()=>{ cb.textContent=`/effort ${lv} をコピー`; },1200); });
+    s.append(cb);
+  }
+  s.append(why);
   /* 節約版：同じプロンプトを安いモデルで回すときの指針。本文は変わらないので
      カードを複製せず、ここに並記する */
   if(p.model.alt){
@@ -2456,6 +2467,36 @@ function generate(){
     d.appendChild(b);
     pretty.appendChild(d);
   });
+  saveHash();
+}
+
+/* ===== 設定を URL ハッシュに保持 =====
+   リロードや共有で、用途・トーン・トグルなどの「設定」だけを復元する。
+   入力欄の本文は URL に載せない（内容が履歴・共有に残るのを避けるため） */
+const INIT_HASH = location.hash;
+function saveHash(){
+  const d={p:state.preset,t:state.tone,l:state.length,f:state.format,s:state.struct,
+    m:state.method,b:state.stability,a:state.traits,r:state.r80,i:state.longInput,h:state.hallmark};
+  try{ history.replaceState(null,"","#s="+encodeURIComponent(JSON.stringify(d))); }catch(e){}
+}
+function restoreHash(){
+  if(!INIT_HASH.startsWith("#s=")) return;
+  let d; try{ d=JSON.parse(decodeURIComponent(INIT_HASH.slice(3))); }catch(e){ return; }
+  if(!d || !PRESETS[d.p]) return;
+  applyPreset(d.p);
+  const lv=lengthLevelsOf(PRESETS[d.p]);
+  const idx=(v,n)=>Number.isInteger(v) && v>=0 && v<n;
+  const pick=(a,list)=>Array.isArray(a) ? list.filter(k=>a.includes(k)) : null;
+  if(idx(d.t,TONE_LEVELS.length)) state.tone=d.t;
+  if(lv && idx(d.l,lv.length)) state.length=d.l;
+  if(OPTS.format.includes(d.f)) state.format=d.f;
+  if(OPTS.struct.includes(d.s)) state.struct=d.s;
+  const m=pick(d.m,OPTS.method), b=pick(d.b,OPTS.stability), a=pick(d.a,TRAITS.map(t=>t.k));
+  if(m) state.method=m; if(b) state.stability=b; if(a) state.traits=a;
+  state.r80=d.r===true; state.longInput=d.i===true; state.hallmark=d.h===true;
+  setSwitch("r80Box",state.r80); setSwitch("longBox",state.longInput); setSwitch("hallmarkBox",state.hallmark);
+  syncSeg("struct",false); syncSeg("format",false); syncSeg("method",true); syncSeg("stability",true);
+  syncTraits(); syncSliders(); generate();
 }
 
 function formatText(v){
@@ -2498,11 +2539,21 @@ function switchTab(pretty){
 }
 
 /* ===== コピー／リセット ===== */
+function copyText(t, done){
+  const fallback=()=>{
+    const ta=document.createElement("textarea"); ta.value=t; document.body.appendChild(ta);
+    ta.select(); document.execCommand("copy"); ta.remove(); done();
+  };
+  if(navigator.clipboard && navigator.clipboard.writeText)
+    navigator.clipboard.writeText(t).then(done, fallback);
+  else fallback();
+}
 function copyOut(){
   const t=document.getElementById("outRaw").textContent;
   /* 未入力のままだとテンプレート変数がそのままAIに渡るため、コピー時に知らせる。
-     raw プリセットは内容欄を使わず {{…}} も無いので対象外 */
-  const empty = !PRESETS[state.preset].raw && !document.getElementById("content").value.trim();
+     生成結果全体を見る（内容欄の未入力だけでなく、お手本などに残した {{…}} も拾う）。
+     raw プリセットのテンプレートには {{番号:語}} のような書式見本があるので対象外 */
+  const empty = !PRESETS[state.preset].raw && /\{\{[^{}]*\}\}/.test(t);
   const fallback=()=>{
     const ta=document.createElement("textarea"); ta.value=t; document.body.appendChild(ta);
     ta.select(); document.execCommand("copy"); ta.remove(); showToast(empty);
@@ -2515,7 +2566,7 @@ function copyOut(){
 function showToast(empty){
   const t=document.getElementById("toast");
   t.textContent = empty
-    ? "コピーしました（内容は未入力：{{ここに内容を貼り付け}} を置き換えてください）"
+    ? "コピーしました（{{…}} が残っています。実際の内容に置き換えてください）"
     : "コピーしました";
   t.classList.add("show"); setTimeout(()=>t.classList.remove("show"), empty?2800:1500);
 }
@@ -2589,6 +2640,7 @@ document.addEventListener("keydown",e=>{
 /* 初期化 */
 if(!/Mac|iPhone|iPad/.test(navigator.platform||"")) document.querySelector("#cmdkOpen kbd").textContent="Ctrl+K";
 applyPreset("summary");
+restoreHash();
 </script>
 </body>
 </html>
