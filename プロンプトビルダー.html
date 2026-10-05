@@ -2004,7 +2004,7 @@ const PRESETS = {
 
   /* 仕訳プリント作成１：簿記の仕訳練習プリントの元になる 問題.md と 解説.md を作る。
      書式の厳守・検算・語群26語など原文の指示をそのまま保つため raw。冒頭の「今回の指定」だけ書き換えて使う */
-  shiwake1:{ ico:"🧾", nm:"仕訳プリント作成１", grp:"edu", role:"", raw:true, template:TPL("tpl-shiwake1"),
+  shiwake1:{ ico:"🧾", nm:"仕訳プリント作成１（問題・解説md作成）", grp:"edu", role:"", raw:true, template:TPL("tpl-shiwake1"),
     model:{tier:"mid", name:"Sonnet", effort:"中", apiEffort:"high", why:"書式の厳守と、借方貸方の一致・語群26語などの検算が中心の作業。標準モデルで足りるが、検算の抜けを防ぐため effort は high にする"},
     label:"このプリセットは調整不要です。右のテンプレートをコピーし、冒頭の「今回の指定」（版の名前・範囲・問題数・難易度・見本との関係・穴埋めの重点）だけ書き換えて使ってください",
     task:"", quality:[],
@@ -2013,9 +2013,9 @@ const PRESETS = {
   /* 仕訳プリント作成２：１で作った 問題.md と 解説.md を Word(.docx) のプリントに整形する（生徒用と教員用解答の2ファイル）。
      中身は書き換えず整形に徹する・ページ構成・語群・PDF での目視確認など原文の指示を保つため raw。
      問題.md と 解説.md は同じメッセージに添付して使う */
-  shiwake2:{ ico:"🖨️", nm:"仕訳プリント作成２", grp:"edu", role:"", raw:true, template:TPL("tpl-shiwake2"),
+  shiwake2:{ ico:"🖨️", nm:"仕訳プリント作成２（プリント作成）", grp:"edu", role:"", raw:true, template:TPL("tpl-shiwake2"),
     model:{tier:"mid", name:"Sonnet", effort:"中", apiEffort:"high", why:"中身を変えずに様式へ整形する作業。語群の記号付けや検算、PDF に変換しての目視確認を手順どおりに踏めば標準モデルで足りる。確認の抜けを防ぐため effort は high にする"},
-    label:"このプリセットは調整不要です。右のテンプレートをコピーし、「仕訳プリント作成１」で作った 問題.md と 解説.md（あれば見本のPDFも）を同じメッセージに添付して使ってください",
+    label:"このプリセットは調整不要です。右のテンプレートをコピーし、「仕訳プリント作成１（問題・解説md作成）」で作った 問題.md と 解説.md（あれば見本のPDFも）を同じメッセージに添付して使ってください",
     task:"", quality:[],
     tone:2, length:2, format:"おまかせ", lengthKind:"none", method:[], stability:[] },
 
